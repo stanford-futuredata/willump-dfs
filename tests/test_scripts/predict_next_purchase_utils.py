@@ -98,27 +98,6 @@ def make_labels(es, training_window, cutoff_time,
     return labels
 
 
-def dask_make_labels(es, **kwargs):
-    label_times = make_labels(es, **kwargs)
-    return label_times, es
-
-
-def calculate_feature_matrix(label_times, features):
-    label_times, es = label_times
-    fm = ft.calculate_feature_matrix(features,
-                                     entityset=es,
-                                     cutoff_time=label_times,
-                                     cutoff_time_in_index=True,
-                                     verbose=False)
-
-    X = merge_features_labels(fm, label_times)
-    return X
-
-
-def merge_features_labels(fm, labels):
-    return fm.reset_index().merge(labels)
-
-
 def feature_importances(model, features, n=10):
     importances = model.feature_importances_
     zipped = sorted(zip(features, importances), key=lambda x: -x[1])
