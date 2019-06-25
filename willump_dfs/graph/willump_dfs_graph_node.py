@@ -14,3 +14,6 @@ class WillumpDFSGraphNode(object):
 
     def get_dependencies(self) -> Optional[List['WillumpDFSGraphNode']]:
         return self._dependencies
+
+    def __repr__(self):
+        return self._feature.get_name()

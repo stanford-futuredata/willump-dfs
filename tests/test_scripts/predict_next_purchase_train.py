@@ -6,7 +6,7 @@ import predict_next_purchase_utils as utils
 from sklearn.ensemble import RandomForestClassifier
 from sklearn.model_selection import cross_val_score
 
-from willump_dfs.evaluation.willump_dfs_graph_builder import willump_dfs_build_graph
+from willump_dfs.evaluation.willump_dfs_graph_builder import willump_dfs_partition_features
 
 resources_folder = "tests/test_resources/predict_next_purchase_resources/"
 
@@ -46,7 +46,7 @@ if __name__ == '__main__':
     clf.fit(X, y)
     top_features = utils.feature_importances(clf, features_encoded, n=20)
 
-    willump_dfs_graph = willump_dfs_build_graph(top_features)
+    willump_dfs_graph = willump_dfs_partition_features(top_features)
 
     # Train model with top features.
     feature_matrix = ft.calculate_feature_matrix(top_features,

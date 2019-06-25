@@ -4,9 +4,11 @@ from typing import List
 from willump_dfs.graph.willump_dfs_graph import WillumpDFSGraph
 
 
-def willump_dfs_build_graph(features: List[FeatureBase]) -> WillumpDFSGraph:
+def willump_dfs_partition_features(features: List[FeatureBase]) -> List[List[FeatureBase]]:
     willump_dfs_graph = WillumpDFSGraph()
     for feature in features:
         willump_dfs_graph.add_new_feature(feature)
-    print(willump_dfs_graph)
-    return willump_dfs_graph
+    partitioned_features = willump_dfs_graph.partition_features()
+    for entry in partitioned_features:
+        print(entry)
+    return partitioned_features
