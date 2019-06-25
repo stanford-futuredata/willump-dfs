@@ -10,22 +10,22 @@ import copy
 class WillumpDFSGraph(object):
 
     def __init__(self):
-        self._graph_dict: MutableMapping[FeatureBase, WillumpDFSGraphNode] = {}
+        self._graph_dict: MutableMapping[str, WillumpDFSGraphNode] = {}
         self._top_level_nodes: List[WillumpDFSGraphNode] = []
 
     def add_new_feature(self, feature: FeatureBase) -> None:
 
         def make_node_for_feature(feature: FeatureBase) -> WillumpDFSGraphNode:
-            if feature in self._graph_dict:
-                return self._graph_dict[feature]
+            if feature.get_name() in self._graph_dict:
+                return self._graph_dict[feature.get_name()]
             feature_dependencies: List[FeatureBase] = feature.get_dependencies(deep=False)
             if len(feature_dependencies) == 0:
                 feature_node = WillumpDFSGraphNode(feature, None)
-                self._graph_dict[feature] = feature_node
+                self._graph_dict[feature.get_name()] = feature_node
                 return feature_node
             graph_dependencies = list(map(make_node_for_feature, feature_dependencies))
             feature_node = WillumpDFSGraphNode(feature, graph_dependencies)
-            self._graph_dict[feature] = feature_node
+            self._graph_dict[feature.get_name()] = feature_node
             return feature_node
         feature_node = make_node_for_feature(feature)
         self._top_level_nodes.append(feature_node)
