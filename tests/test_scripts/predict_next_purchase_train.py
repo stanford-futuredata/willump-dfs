@@ -1,9 +1,12 @@
+import pickle
+
 import featuretools as ft
 import pandas as pd
+import predict_next_purchase_utils as utils
 from sklearn.ensemble import RandomForestClassifier
 from sklearn.model_selection import cross_val_score
-import pickle
-import predict_next_purchase_utils as utils
+
+from willump_dfs.evaluation.willump_dfs_graph_builder import willump_dfs_build_graph
 
 resources_folder = "tests/test_resources/predict_next_purchase_resources/"
 
@@ -23,7 +26,7 @@ if __name__ == '__main__':
                                       cutoff_time=label_times,
                                       training_window=ft.Timedelta("60 days"),  # same as above
                                       entityset=es,
-                                      verbose=True)
+                                      verbose=False)
     # encode categorical values
     fm_encoded, features_encoded = ft.encode_features(feature_matrix,
                                                       features)
@@ -43,6 +46,8 @@ if __name__ == '__main__':
     clf.fit(X, y)
     top_features = utils.feature_importances(clf, features_encoded, n=20)
 
+    willump_dfs_graph = willump_dfs_build_graph(top_features)
+
     # Train model with top features.
     feature_matrix = ft.calculate_feature_matrix(top_features,
                                                  entityset=es,
@@ -55,7 +60,7 @@ if __name__ == '__main__':
     y = feature_matrix.pop("label")
 
     scores = cross_val_score(estimator=clf, X=feature_matrix, y=y, cv=3,
-                             scoring="roc_auc", verbose=True)
+                             scoring="roc_auc", verbose=False)
 
     print("Top Features AUC %.2f +/- %.2f" % (scores.mean(), scores.std()))
 

@@ -1,2 +1,2 @@
 # willump-dfs
-Applying Willump design to Deep Feature Search
+Applying Willump design to Deep Feature Synthesis
