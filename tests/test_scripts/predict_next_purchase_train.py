@@ -36,9 +36,9 @@ if __name__ == '__main__':
     X = X.fillna(0)
     y = X.pop("label")
 
-    clf = RandomForestClassifier(n_estimators=400, n_jobs=1)
+    clf = RandomForestClassifier(n_estimators=400, n_jobs=1, random_state=42)
     scores = cross_val_score(estimator=clf, X=X, y=y, cv=3,
-                             scoring="roc_auc", verbose=True)
+                             scoring="roc_auc", verbose=False)
 
     print("All Features AUC %.2f +/- %.2f" % (scores.mean(), scores.std()))
 
