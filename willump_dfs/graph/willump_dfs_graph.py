@@ -1,10 +1,10 @@
+import copy
 from typing import MutableMapping, List, Set
 
 from featuretools.feature_base.feature_base import FeatureBase
 
 from willump_dfs.graph.willump_dfs_graph_node import WillumpDFSGraphNode
 
-import copy
 
 class WillumpDFSGraph(object):
 
@@ -13,7 +13,9 @@ class WillumpDFSGraph(object):
         self._top_level_nodes: List[WillumpDFSGraphNode] = []
 
     def add_new_feature(self, feature: FeatureBase) -> None:
-
+        """
+        Add a new top-level feature to the graph.
+        """
         def make_node_for_feature(feature: FeatureBase) -> WillumpDFSGraphNode:
             if feature.get_name() in self._graph_dict:
                 return self._graph_dict[feature.get_name()]
@@ -26,11 +28,16 @@ class WillumpDFSGraph(object):
             feature_node = WillumpDFSGraphNode(feature, graph_dependencies)
             self._graph_dict[feature.get_name()] = feature_node
             return feature_node
+
         feature_node = make_node_for_feature(feature)
         self._top_level_nodes.append(feature_node)
         return
 
     def partition_features(self) -> List[List[FeatureBase]]:
+        """
+        Partition the graph's top-level features into disjoint sets of features which share no dependencies.
+        """
+        # Map each top-level node to its set of dependencies.
         node_to_dependency_set: MutableMapping[WillumpDFSGraphNode, Set[WillumpDFSGraphNode]] = {}
         for top_level_node in self._top_level_nodes:
             dependency_set = set()
@@ -45,6 +52,7 @@ class WillumpDFSGraph(object):
             node_to_dependency_set[top_level_node] = dependency_set
         list_of_partitions: List[List[FeatureBase]] = []
         list_to_partition = copy.copy(self._top_level_nodes)
+        # Group nodes that share dependencies.
         while len(list_to_partition) > 0:
             base_node = list_to_partition.pop()
             base_set = node_to_dependency_set[base_node]
@@ -60,7 +68,7 @@ class WillumpDFSGraph(object):
                         nodes_in_partition.append(curr_node)
                 list_to_partition = list(filter(lambda x: x not in nodes_in_partition, list_to_partition))
             list_of_partitions.append(list(map(lambda node: node.get_feature(), nodes_in_partition)))
-        assert(sum(map(len, list_of_partitions)) == len(self._top_level_nodes))
+        assert (sum(map(len, list_of_partitions)) == len(self._top_level_nodes))
         return list_of_partitions
 
     def __str__(self) -> str:
@@ -80,6 +88,3 @@ class WillumpDFSGraph(object):
                     visit_stack.append(dependency)
                 visited_nodes.add(next_node)
         return return_string
-
-
-
