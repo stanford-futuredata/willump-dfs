@@ -1,3 +1,4 @@
+import copy
 import time
 from typing import List, Tuple
 
@@ -75,3 +76,23 @@ def willump_dfs_find_efficient_features(partitioned_features: List[List[FeatureB
     for p_id in less_important_partitions:
         less_important_features += partitioned_features[p_id]
     return more_important_features, less_important_features
+
+
+def willump_dfs_train_models(more_important_features: List[FeatureBase], less_important_features: List[FeatureBase],
+                             entity_set, training_label_times, model):
+    small_model = copy.copy(model)
+    full_model = copy.copy(model)
+    full_features = more_important_features + less_important_features
+    mi_feature_matrix = ft.calculate_feature_matrix(more_important_features,
+                                                    entityset=entity_set,
+                                                    cutoff_time=training_label_times)
+    y = mi_feature_matrix.pop("label")
+    mi_feature_matrix = mi_feature_matrix.fillna(0)
+    small_model.fit(mi_feature_matrix, y)
+    full_feature_matrix = ft.calculate_feature_matrix(full_features,
+                                                      entityset=entity_set,
+                                                      cutoff_time=training_label_times)
+    full_feature_matrix.drop(["label"], axis=1, inplace=True)
+    full_feature_matrix = full_feature_matrix.fillna(0)
+    full_model.fit(full_feature_matrix, y)
+    return small_model, full_model
