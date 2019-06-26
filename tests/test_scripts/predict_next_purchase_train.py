@@ -7,7 +7,7 @@ import predict_next_purchase_utils as utils
 from sklearn.ensemble import RandomForestClassifier
 from sklearn.model_selection import cross_val_score
 
-from willump_dfs.evaluation.willump_dfs_graph_builder import willump_dfs_partition_features
+from willump_dfs.evaluation.willump_dfs_graph_builder import *
 
 resources_folder = "tests/test_resources/predict_next_purchase_resources/"
 
@@ -64,7 +64,12 @@ if __name__ == '__main__':
                                                  cutoff_time_in_index=True,
                                                  verbose=False)
     time_elapsed = time.time() - t0
-    print("Feature Calculation Time: %f" % time_elapsed)
+    print("Top Features Calculation Time: %f" % time_elapsed)
+
+    partition_times = willump_dfs_time_partitioned_features(partitioned_features, es, label_times)
+
+    for feature, time in zip(partitioned_features, partition_times):
+        print("Features: %s Time: %f" % (feature, time))
 
     feature_matrix = feature_matrix.reset_index().merge(label_times)
     feature_matrix.drop(["user_id", "time"], axis=1, inplace=True)

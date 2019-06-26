@@ -11,11 +11,15 @@ class WillumpDFSGraph(object):
     def __init__(self):
         self._graph_dict: MutableMapping[str, WillumpDFSGraphNode] = {}
         self._top_level_nodes: List[WillumpDFSGraphNode] = []
+        self._top_level_features: MutableMapping[str, FeatureBase] = {}
 
     def add_new_feature(self, feature: FeatureBase) -> None:
         """
         Add a new top-level feature to the graph.
         """
+
+        self._top_level_features[feature.get_name()] = feature
+
         def make_node_for_feature(feature: FeatureBase) -> WillumpDFSGraphNode:
             if feature.get_name() in self._graph_dict:
                 return self._graph_dict[feature.get_name()]
@@ -69,6 +73,10 @@ class WillumpDFSGraph(object):
                 list_to_partition = list(filter(lambda x: x not in nodes_in_partition, list_to_partition))
             list_of_partitions.append(list(map(lambda node: node.get_feature(), nodes_in_partition)))
         assert (sum(map(len, list_of_partitions)) == len(self._top_level_nodes))
+        # Replace features with original versions with correct entity IDs.
+        for partition_features in list_of_partitions:
+            for i, partition_feature in enumerate(partition_features):
+                partition_features[i] = self._top_level_features[partition_feature.get_name()]
         return list_of_partitions
 
     def __str__(self) -> str:
