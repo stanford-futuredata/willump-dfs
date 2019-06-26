@@ -13,6 +13,4 @@ def willump_dfs_partition_features(features: List[FeatureBase]) -> List[List[Fea
     for feature in features:
         willump_dfs_graph.add_new_feature(feature)
     partitioned_features = willump_dfs_graph.partition_features()
-    for entry in partitioned_features:
-        print(entry)
     return partitioned_features

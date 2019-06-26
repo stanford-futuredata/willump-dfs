@@ -1,4 +1,5 @@
 import pickle
+import time
 
 import featuretools as ft
 import pandas as pd
@@ -13,8 +14,15 @@ resources_folder = "tests/test_resources/predict_next_purchase_resources/"
 data_small = "data_small"
 data_large = "data_large"
 
+data_folder = data_large
+
 if __name__ == '__main__':
-    es = utils.load_entityset(resources_folder + data_small)
+
+    try:
+        es = ft.read_entityset(resources_folder + data_folder + "_entity_set")
+    except AssertionError:
+        es = utils.load_entityset(resources_folder + data_folder)
+        es.to_pickle(resources_folder + data_folder + "_entity_set")
 
     label_times = utils.make_labels(es=es,
                                     product_name="Banana",
@@ -46,14 +54,18 @@ if __name__ == '__main__':
     clf.fit(X, y)
     top_features = utils.feature_importances(clf, features_encoded, n=20)
 
-    willump_dfs_graph = willump_dfs_partition_features(top_features)
+    partitioned_features = willump_dfs_partition_features(top_features)
 
     # Train model with top features.
+    t0 = time.time()
     feature_matrix = ft.calculate_feature_matrix(top_features,
                                                  entityset=es,
                                                  cutoff_time=label_times,
                                                  cutoff_time_in_index=True,
                                                  verbose=False)
+    time_elapsed = time.time() - t0
+    print("Feature Calculation Time: %f" % time_elapsed)
+
     feature_matrix = feature_matrix.reset_index().merge(label_times)
     feature_matrix.drop(["user_id", "time"], axis=1, inplace=True)
     feature_matrix = feature_matrix.fillna(0)
