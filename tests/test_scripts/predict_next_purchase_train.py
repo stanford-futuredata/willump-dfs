@@ -53,6 +53,7 @@ if __name__ == '__main__':
     # Select top features.
     clf.fit(X, y)
     top_features = utils.feature_importances(clf, features_encoded, n=20)
+    top_feature_importances = sorted(clf.feature_importances_, reverse=True)[:20]
 
     partitioned_features = willump_dfs_partition_features(top_features)
 
@@ -67,9 +68,11 @@ if __name__ == '__main__':
     print("Top Features Calculation Time: %f" % time_elapsed)
 
     partition_times = willump_dfs_time_partitioned_features(partitioned_features, es, label_times)
+    partition_importances = willump_dfs_get_partition_importances(partitioned_features, top_features,
+                                                                  top_feature_importances)
 
-    for feature, time in zip(partitioned_features, partition_times):
-        print("Features: %s Time: %f" % (feature, time))
+    for feature, time, importance in zip(partitioned_features, partition_times, partition_importances):
+        print("Features: %s\nCost: %f  Importance: %f" % (feature, time, importance))
 
     feature_matrix = feature_matrix.reset_index().merge(label_times)
     feature_matrix.drop(["user_id", "time"], axis=1, inplace=True)

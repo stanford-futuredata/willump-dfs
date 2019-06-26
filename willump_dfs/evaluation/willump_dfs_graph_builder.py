@@ -1,5 +1,5 @@
 import time
-from typing import List
+from typing import List, Tuple
 
 import featuretools as ft
 from featuretools.feature_base.feature_base import FeatureBase
@@ -29,3 +29,21 @@ def willump_dfs_time_partitioned_features(partitioned_features: List[List[Featur
         time_elapsed = time.time() - t0
         partition_times.append(time_elapsed)
     return partition_times
+
+
+def willump_dfs_get_partition_importances(partitioned_features: List[List[FeatureBase]], features: List[FeatureBase],
+                                          feature_importances: List[float]) -> List[float]:
+    feature_importance_map = {feature: importance for feature, importance in zip(features, feature_importances)}
+    feature_importance_list = []
+    for feature_set in partitioned_features:
+        partition_importance = 0
+        for feature in feature_set:
+            partition_importance += feature_importance_map[feature]
+        feature_importance_list.append(partition_importance)
+    return feature_importance_list
+
+
+def willump_dfs_find_efficient_features(partitioned_features: List[List[FeatureBase]], partition_times: List[float],
+                                        partition_importances: List[float]) \
+        -> Tuple[List[FeatureBase], List[FeatureBase]]:
+    return [], []
