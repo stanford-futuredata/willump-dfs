@@ -99,10 +99,11 @@ def make_labels(es, training_window, cutoff_time,
     return labels
 
 
-def feature_importances(model, features, n=10):
+def feature_importances(model, features, n=10, verbose=False):
     importances = model.feature_importances_
     zipped = sorted(zip(features, importances), key=lambda x: -x[1])
-    for i, f in enumerate(zipped[:n]):
-        print("%d: Feature: %s, %.3f" % (i + 1, f[0].get_name(), f[1]))
+    if verbose:
+        for i, f in enumerate(zipped[:n]):
+            print("%d: Feature: %s, %.3f" % (i + 1, f[0].get_name(), f[1]))
 
     return [f[0] for f in zipped[:n]]

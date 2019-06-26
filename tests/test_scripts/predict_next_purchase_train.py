@@ -15,7 +15,7 @@ resources_folder = "tests/test_resources/predict_next_purchase_resources/"
 data_small = "data_small"
 data_large = "data_large"
 
-data_folder = data_small
+data_folder = data_large
 
 if __name__ == '__main__':
 
@@ -48,7 +48,7 @@ if __name__ == '__main__':
     clf = RandomForestClassifier(n_estimators=400, n_jobs=1)
     # Select top features.
     clf.fit(X, y)
-    top_features = utils.feature_importances(clf, features_encoded, n=20)
+    top_features = utils.feature_importances(clf, features_encoded, n=100)
 
     label_times_train, label_times_test = train_test_split(label_times, test_size=0.2, random_state=42)
 
@@ -82,22 +82,27 @@ if __name__ == '__main__':
                                                        training_label_times=label_times_train,
                                                        model=clf)
 
+    mi_t0 = time.time()
     mi_feature_matrix_test = ft.calculate_feature_matrix(more_important_features,
                                                          entityset=es,
                                                          cutoff_time=label_times_test)
     y_test = mi_feature_matrix_test.pop("label")
     mi_feature_matrix_test = mi_feature_matrix_test.fillna(0)
     mi_preds = small_model.predict(mi_feature_matrix_test)
+    mi_time_elapsed = time.time() - mi_t0
     mi_score = roc_auc_score(y_test, mi_preds)
 
+    full_t0 = time.time()
     full_feature_matrix_test = ft.calculate_feature_matrix(more_important_features + less_important_features,
                                                            entityset=es,
                                                            cutoff_time=label_times_test)
     full_feature_matrix_test.drop(["label"], axis=1, inplace=True)
     full_feature_matrix_test = full_feature_matrix_test.fillna(0)
     full_preds = full_model.predict(full_feature_matrix_test)
+    full_time_elapsed = time.time() - full_t0
     full_score = roc_auc_score(y_test, full_preds)
 
+    print("More important features time: %f  Full feature time: %f" % (mi_time_elapsed, full_time_elapsed))
     print("More important features AUC: %f  Full features AUC: %f" % (mi_score, full_score))
 
     # Save top features.
