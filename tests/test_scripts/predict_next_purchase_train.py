@@ -53,9 +53,6 @@ if __name__ == '__main__':
     # Select top features.
     clf.fit(X, y)
     top_features = utils.feature_importances(clf, features_encoded, n=20)
-    top_feature_importances = sorted(clf.feature_importances_, reverse=True)[:20]
-
-    partitioned_features = willump_dfs_partition_features(top_features)
 
     # Train model with top features.
     t0 = time.time()
@@ -72,15 +69,29 @@ if __name__ == '__main__':
     top_feature_matrix = top_feature_matrix.fillna(0)
     top_y = top_feature_matrix.pop("label")
 
+    scores = cross_val_score(estimator=clf, X=top_feature_matrix, y=top_y, cv=3,
+                             scoring="roc_auc", verbose=False)
+
+    print("Top Features AUC %.2f +/- %.2f" % (scores.mean(), scores.std()))
+
+    clf.fit(top_feature_matrix, top_y)
+    top_feature_importances = clf.feature_importances_
+
+    partitioned_features = willump_dfs_partition_features(top_features)
+
     partition_times = willump_dfs_time_partitioned_features(partitioned_features, es, label_times)
     partition_importances = willump_dfs_get_partition_importances(partitioned_features, top_features,
                                                                   top_feature_importances)
+
     more_important_features, less_important_features = \
         willump_dfs_find_efficient_features(partitioned_features,
                                             partition_costs=partition_times,
                                             partition_importances=partition_importances)
 
-    print(more_important_features)
+    # for feature, cost, importance in zip(partitioned_features, partition_times, partition_importances):
+    #     print("Features: %s\nCost: %f  Importance: %f" % (feature, cost, importance))
+
+    # print(more_important_features)
     t0 = time.time()
     mi_feature_matrix = ft.calculate_feature_matrix(more_important_features,
                                                     entityset=es,
@@ -95,7 +106,7 @@ if __name__ == '__main__':
     mi_feature_matrix = mi_feature_matrix.fillna(0)
     mi_y = mi_feature_matrix.pop("label")
 
-    print(less_important_features)
+    # print(less_important_features)
     t0 = time.time()
     li_feature_matrix = ft.calculate_feature_matrix(less_important_features,
                                                     entityset=es,
@@ -109,14 +120,6 @@ if __name__ == '__main__':
     li_feature_matrix.drop(["user_id", "time"], axis=1, inplace=True)
     li_feature_matrix = li_feature_matrix.fillna(0)
     li_y = li_feature_matrix.pop("label")
-
-    for feature, time, importance in zip(partitioned_features, partition_times, partition_importances):
-        print("Features: %s\nCost: %f  Importance: %f" % (feature, time, importance))
-
-    scores = cross_val_score(estimator=clf, X=top_feature_matrix, y=top_y, cv=3,
-                             scoring="roc_auc", verbose=False)
-
-    print("Top Features AUC %.2f +/- %.2f" % (scores.mean(), scores.std()))
 
     scores = cross_val_score(estimator=clf, X=mi_feature_matrix, y=mi_y, cv=3,
                              scoring="roc_auc", verbose=False)
