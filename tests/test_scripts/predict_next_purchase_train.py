@@ -51,6 +51,8 @@ if __name__ == '__main__':
     top_features = utils.feature_importances(clf, features_encoded, n=100)
 
     label_times_train, label_times_test = train_test_split(label_times, test_size=0.2, random_state=42)
+    label_times_train = label_times_train.sort_values(by=["user_id"])
+    label_times_test = label_times_test.sort_values(by=["user_id"])
 
     # Train model with top features.
     top_feature_matrix_train = ft.calculate_feature_matrix(top_features,
@@ -102,8 +104,18 @@ if __name__ == '__main__':
     full_time_elapsed = time.time() - full_t0
     full_score = roc_auc_score(y_test, full_preds)
 
-    print("More important features time: %f  Full feature time: %f" % (mi_time_elapsed, full_time_elapsed))
-    print("More important features AUC: %f  Full features AUC: %f" % (mi_score, full_score))
+    cascade_t0 = time.time()
+    cascade_preds = willump_dfs_cascade(more_important_features=more_important_features,
+                                        less_important_features=less_important_features,
+                                        entity_set=es, label_times=label_times_test, small_model=small_model,
+                                        full_model=full_model, confidence_threshold=0.6)
+    cascade_time_elapsed = time.time() - cascade_t0
+    cascade_score = roc_auc_score(y_test, cascade_preds)
+
+    print("More important features time: %f  Full feature time: %f  Cascade time: %f" %
+          (mi_time_elapsed, full_time_elapsed, cascade_time_elapsed))
+    print("More important features AUC: %f  Full features AUC: %f  Cascade AUC: %f" %
+          (mi_score, full_score, cascade_score))
 
     # Save top features.
     ft.save_features(top_features, resources_folder + "top_features.dfs")

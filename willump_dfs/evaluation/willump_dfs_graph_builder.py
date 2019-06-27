@@ -1,5 +1,7 @@
 import copy
 import time
+import numpy as np
+import pandas as pd
 from typing import List, Tuple
 
 import featuretools as ft
@@ -96,3 +98,34 @@ def willump_dfs_train_models(more_important_features: List[FeatureBase], less_im
     full_feature_matrix = full_feature_matrix.fillna(0)
     full_model.fit(full_feature_matrix, y)
     return small_model, full_model
+
+
+def willump_dfs_cascade(more_important_features: List[FeatureBase], less_important_features: List[FeatureBase],
+                        entity_set, label_times, small_model, full_model, confidence_threshold):
+    full_features = more_important_features + less_important_features
+    mi_feature_matrix = ft.calculate_feature_matrix(more_important_features,
+                                                    entityset=entity_set,
+                                                    cutoff_time=label_times)
+    mi_feature_matrix.drop(["label"], axis=1, inplace=True)
+    mi_feature_matrix = mi_feature_matrix.fillna(0)
+    small_model_probs = small_model.predict_proba(mi_feature_matrix)
+    small_model_preds = small_model.classes_.take(np.argmax(small_model_probs, axis=1), axis=0)
+    combined_preds = small_model_preds
+    small_model_probs = small_model_probs[:, 1]
+    mask = np.logical_and(confidence_threshold >= small_model_probs, small_model_probs >= 1 - confidence_threshold)
+    cascaded_labels = label_times[mask]
+    cascaded_mi_matrix = mi_feature_matrix[mask]
+    if len(cascaded_labels) > 0:
+        li_feature_matrix = ft.calculate_feature_matrix(less_important_features,
+                                                        entityset=entity_set,
+                                                        cutoff_time=cascaded_labels)
+        li_feature_matrix.drop(["label"], axis=1, inplace=True)
+        li_feature_matrix = li_feature_matrix.fillna(0)
+        full_feature_matrix = pd.concat([cascaded_mi_matrix, li_feature_matrix], axis=1)
+        full_model_preds = full_model.predict(full_feature_matrix)
+        f_index = 0
+        for i in range(len(combined_preds)):
+            if mask[i]:
+                combined_preds[i] = full_model_preds[f_index]
+                f_index += 1
+    return combined_preds
