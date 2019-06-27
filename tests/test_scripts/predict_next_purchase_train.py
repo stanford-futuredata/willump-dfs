@@ -48,7 +48,8 @@ if __name__ == '__main__':
     clf = RandomForestClassifier(n_estimators=400, n_jobs=1)
     # Select top features.
     clf.fit(X, y)
-    top_features = utils.feature_importances(clf, features_encoded, n=100)
+    top_features = utils.feature_importances(clf, features_encoded, n=20)
+    # top_features = ft.load_features(resources_folder + "top_features.dfs")
 
     label_times_train, label_times_test = train_test_split(label_times, test_size=0.2, random_state=42)
     label_times_train = label_times_train.sort_values(by=["user_id"])
@@ -76,8 +77,9 @@ if __name__ == '__main__':
                                             partition_costs=partition_times,
                                             partition_importances=partition_importances)
 
-    # for feature, cost, importance in zip(partitioned_features, partition_times, partition_importances):
-    #     print("Features: %s\nCost: %f  Importance: %f" % (feature, cost, importance))
+    for i, (features, cost, importance) in enumerate(zip(partitioned_features, partition_times, partition_importances)):
+        print("%d Features: %s\nCost: %f  Importance: %f  Efficient: %r" % (i, features, cost, importance, all(
+            utils.feature_in_list(feature, more_important_features) for feature in features)))
 
     small_model, full_model = willump_dfs_train_models(more_important_features=more_important_features,
                                                        less_important_features=less_important_features,

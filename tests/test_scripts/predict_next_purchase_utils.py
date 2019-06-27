@@ -107,3 +107,7 @@ def feature_importances(model, features, n=10, verbose=False):
             print("%d: Feature: %s, %.3f" % (i + 1, f[0].get_name(), f[1]))
 
     return [f[0] for f in zipped[:n]]
+
+
+def feature_in_list(feature, list):
+    return any(feature.get_name() == list_feature.get_name() for list_feature in list)
