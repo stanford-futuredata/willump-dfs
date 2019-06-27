@@ -53,12 +53,13 @@ if __name__ == '__main__':
     label_times_train, label_times_test = train_test_split(label_times, test_size=0.2, random_state=42)
     label_times_train = label_times_train.sort_values(by=["user_id"])
     label_times_test = label_times_test.sort_values(by=["user_id"])
+    y_train = label_times_train.pop("label")
+    y_test = label_times_test.pop("label")
 
     # Train model with top features.
     top_feature_matrix_train = ft.calculate_feature_matrix(top_features,
                                                            entityset=es,
                                                            cutoff_time=label_times_train)
-    y_train = top_feature_matrix_train.pop("label")
     top_feature_matrix_train = top_feature_matrix_train.fillna(0)
 
     clf.fit(top_feature_matrix_train, y_train)
@@ -81,14 +82,14 @@ if __name__ == '__main__':
     small_model, full_model = willump_dfs_train_models(more_important_features=more_important_features,
                                                        less_important_features=less_important_features,
                                                        entity_set=es,
-                                                       training_label_times=label_times_train,
+                                                       training_times=label_times_train,
+                                                       y_train=y_train,
                                                        model=clf)
 
     mi_t0 = time.time()
     mi_feature_matrix_test = ft.calculate_feature_matrix(more_important_features,
                                                          entityset=es,
                                                          cutoff_time=label_times_test)
-    y_test = mi_feature_matrix_test.pop("label")
     mi_feature_matrix_test = mi_feature_matrix_test.fillna(0)
     mi_preds = small_model.predict(mi_feature_matrix_test)
     mi_time_elapsed = time.time() - mi_t0
@@ -98,7 +99,6 @@ if __name__ == '__main__':
     full_feature_matrix_test = ft.calculate_feature_matrix(more_important_features + less_important_features,
                                                            entityset=es,
                                                            cutoff_time=label_times_test)
-    full_feature_matrix_test.drop(["label"], axis=1, inplace=True)
     full_feature_matrix_test = full_feature_matrix_test.fillna(0)
     full_preds = full_model.predict(full_feature_matrix_test)
     full_time_elapsed = time.time() - full_t0
@@ -107,7 +107,7 @@ if __name__ == '__main__':
     cascade_t0 = time.time()
     cascade_preds = willump_dfs_cascade(more_important_features=more_important_features,
                                         less_important_features=less_important_features,
-                                        entity_set=es, label_times=label_times_test, small_model=small_model,
+                                        entity_set=es, cutoff_times=label_times_test, small_model=small_model,
                                         full_model=full_model, confidence_threshold=0.6)
     cascade_time_elapsed = time.time() - cascade_t0
     cascade_score = roc_auc_score(y_test, cascade_preds)

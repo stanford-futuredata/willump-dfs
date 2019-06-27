@@ -22,13 +22,13 @@ def willump_dfs_partition_features(features: List[FeatureBase]) -> List[List[Fea
 
 
 def willump_dfs_time_partitioned_features(partitioned_features: List[List[FeatureBase]], validation_entity_set,
-                                          validation_label_times) -> List[float]:
+                                          validation_times) -> List[float]:
     partition_times = []
     for feature_set in partitioned_features:
         t0 = time.time()
         ft.calculate_feature_matrix(feature_set,
                                     entityset=validation_entity_set,
-                                    cutoff_time=validation_label_times)
+                                    cutoff_time=validation_times)
         time_elapsed = time.time() - t0
         partition_times.append(time_elapsed)
     return partition_times
@@ -81,45 +81,40 @@ def willump_dfs_find_efficient_features(partitioned_features: List[List[FeatureB
 
 
 def willump_dfs_train_models(more_important_features: List[FeatureBase], less_important_features: List[FeatureBase],
-                             entity_set, training_label_times, model):
+                             entity_set, training_times, y_train, model):
     small_model = copy.copy(model)
     full_model = copy.copy(model)
     full_features = more_important_features + less_important_features
     mi_feature_matrix = ft.calculate_feature_matrix(more_important_features,
                                                     entityset=entity_set,
-                                                    cutoff_time=training_label_times)
-    y = mi_feature_matrix.pop("label")
+                                                    cutoff_time=training_times)
     mi_feature_matrix = mi_feature_matrix.fillna(0)
-    small_model.fit(mi_feature_matrix, y)
+    small_model.fit(mi_feature_matrix, y_train)
     full_feature_matrix = ft.calculate_feature_matrix(full_features,
                                                       entityset=entity_set,
-                                                      cutoff_time=training_label_times)
-    full_feature_matrix.drop(["label"], axis=1, inplace=True)
+                                                      cutoff_time=training_times)
     full_feature_matrix = full_feature_matrix.fillna(0)
-    full_model.fit(full_feature_matrix, y)
+    full_model.fit(full_feature_matrix, y_train)
     return small_model, full_model
 
 
 def willump_dfs_cascade(more_important_features: List[FeatureBase], less_important_features: List[FeatureBase],
-                        entity_set, label_times, small_model, full_model, confidence_threshold):
-    full_features = more_important_features + less_important_features
+                        entity_set, cutoff_times, small_model, full_model, confidence_threshold):
     mi_feature_matrix = ft.calculate_feature_matrix(more_important_features,
                                                     entityset=entity_set,
-                                                    cutoff_time=label_times)
-    mi_feature_matrix.drop(["label"], axis=1, inplace=True)
+                                                    cutoff_time=cutoff_times)
     mi_feature_matrix = mi_feature_matrix.fillna(0)
     small_model_probs = small_model.predict_proba(mi_feature_matrix)
     small_model_preds = small_model.classes_.take(np.argmax(small_model_probs, axis=1), axis=0)
     combined_preds = small_model_preds
     small_model_probs = small_model_probs[:, 1]
     mask = np.logical_and(confidence_threshold >= small_model_probs, small_model_probs >= 1 - confidence_threshold)
-    cascaded_labels = label_times[mask]
+    cascaded_times = cutoff_times[mask]
     cascaded_mi_matrix = mi_feature_matrix[mask]
-    if len(cascaded_labels) > 0:
+    if len(cascaded_times) > 0:
         li_feature_matrix = ft.calculate_feature_matrix(less_important_features,
                                                         entityset=entity_set,
-                                                        cutoff_time=cascaded_labels)
-        li_feature_matrix.drop(["label"], axis=1, inplace=True)
+                                                        cutoff_time=cascaded_times)
         li_feature_matrix = li_feature_matrix.fillna(0)
         full_feature_matrix = pd.concat([cascaded_mi_matrix, li_feature_matrix], axis=1)
         full_model_preds = full_model.predict(full_feature_matrix)
