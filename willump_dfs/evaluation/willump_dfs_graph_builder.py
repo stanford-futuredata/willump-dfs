@@ -1,12 +1,15 @@
 import copy
 import time
-import numpy as np
-import pandas as pd
 from typing import List, Tuple
 
 import featuretools as ft
+import numpy as np
+import pandas as pd
 from featuretools.feature_base.feature_base import FeatureBase
+from sklearn.metrics import roc_auc_score
+from sklearn.model_selection import ShuffleSplit
 
+from willump_dfs.evaluation.willump_dfs_utils import index_feature_in_list
 from willump_dfs.graph.willump_dfs_graph import WillumpDFSGraph
 
 
@@ -37,13 +40,13 @@ def willump_dfs_time_partitioned_features(partitioned_features: List[List[Featur
 def willump_dfs_get_partition_importances(partitioned_features: List[List[FeatureBase]], features: List[FeatureBase],
                                           feature_importances: List[float]) -> List[float]:
     feature_importance_map = {feature: importance for feature, importance in zip(features, feature_importances)}
-    feature_importance_list = []
+    partition_importance_list = []
     for feature_set in partitioned_features:
         partition_importance = 0
         for feature in feature_set:
             partition_importance += feature_importance_map[feature]
-        feature_importance_list.append(partition_importance)
-    return feature_importance_list
+        partition_importance_list.append(partition_importance)
+    return partition_importance_list
 
 
 def willump_dfs_find_efficient_features(partitioned_features: List[List[FeatureBase]], partition_costs: List[float],
@@ -124,3 +127,28 @@ def willump_dfs_cascade(more_important_features: List[FeatureBase], less_importa
                 combined_preds[i] = full_model_preds[f_index]
                 f_index += 1
     return combined_preds
+
+
+def willump_dfs_mean_decrease_accuracy(features: List[FeatureBase],
+                                       partitioned_features: List[List[FeatureBase]], X, y, model) -> List[float]:
+    """
+    Calculate mean decrease accuracy for every partition.  This is the decrease in OOB accuracy when all features
+    in the partition are shuffled.
+    """
+    model = copy.copy(model)
+    partition_indices = list(map(lambda partition: list(map(lambda feature: index_feature_in_list(feature, features), partition)), partitioned_features))
+    scores = [[] for _ in range(len(partition_indices))]
+    rs = ShuffleSplit(n_splits=3, test_size=0.2, random_state=42)
+    for train_index, test_index in rs.split(X):
+        X_train, X_test = X.iloc[train_index], X.iloc[test_index]
+        y_train, y_test = y.iloc[train_index], y.iloc[test_index]
+        model.fit(X_train, y_train)
+        y_pred = model.predict(X_test)
+        base_accuracy = roc_auc_score(y_test, y_pred)
+        for i, feature_indices in enumerate(partition_indices):
+            for feature_index in feature_indices:
+                X_test_copy = X_test.values.copy()
+                np.random.shuffle(X_test_copy[:, feature_index])
+                shuffle_accuracy = roc_auc_score(y_test, model.predict(X_test_copy))
+                scores[i].append(base_accuracy - shuffle_accuracy)
+    return list(map(np.average, scores))

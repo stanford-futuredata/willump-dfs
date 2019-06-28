@@ -63,14 +63,11 @@ if __name__ == '__main__':
                                                            cutoff_time=label_times_train)
     top_feature_matrix_train = top_feature_matrix_train.fillna(0)
 
-    clf.fit(top_feature_matrix_train, y_train)
-    top_feature_importances = clf.feature_importances_
-
     partitioned_features = willump_dfs_partition_features(top_features)
 
     partition_times = willump_dfs_time_partitioned_features(partitioned_features, es, label_times)
-    partition_importances = willump_dfs_get_partition_importances(partitioned_features, top_features,
-                                                                  top_feature_importances)
+    partition_importances = \
+        willump_dfs_mean_decrease_accuracy(top_features, partitioned_features, top_feature_matrix_train, y_train, clf)
 
     more_important_features, less_important_features = \
         willump_dfs_find_efficient_features(partitioned_features,
