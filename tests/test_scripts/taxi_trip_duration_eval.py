@@ -165,9 +165,7 @@ if __name__ == "__main__":
     # this allows us to create features that are conditioned on a second value before we calculate.
     es.add_interesting_values()
 
-    cutoff_train, cutoff_valid = train_test_split(cutoff_time, test_size=0.2, random_state=42)
-    cutoff_train = cutoff_train.sort_values(by=["id"])
-    cutoff_valid = cutoff_valid.sort_values(by=["id"])
+    cutoff_train, cutoff_valid = train_test_split(cutoff_time, test_size=0.2, shuffle=False)
     y_train = cutoff_train.pop("trip_duration")
     y_train = np.log(y_train.values + 1)
     y_valid = cutoff_valid.pop("trip_duration")
