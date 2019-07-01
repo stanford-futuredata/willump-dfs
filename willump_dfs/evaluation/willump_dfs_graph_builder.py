@@ -25,13 +25,14 @@ def willump_dfs_partition_features(features: List[FeatureBase]) -> List[List[Fea
 
 
 def willump_dfs_time_partitioned_features(partitioned_features: List[List[FeatureBase]], validation_entity_set,
-                                          validation_times) -> List[float]:
+                                          validation_times, approximate=None) -> List[float]:
     partition_times = []
     for feature_set in partitioned_features:
         t0 = time.time()
         ft.calculate_feature_matrix(feature_set,
                                     entityset=validation_entity_set,
-                                    cutoff_time=validation_times)
+                                    cutoff_time=validation_times,
+                                    approximate=approximate)
         time_elapsed = time.time() - t0
         partition_times.append(time_elapsed)
     return partition_times
@@ -130,25 +131,26 @@ def willump_dfs_cascade(more_important_features: List[FeatureBase], less_importa
 
 
 def willump_dfs_mean_decrease_accuracy(features: List[FeatureBase],
-                                       partitioned_features: List[List[FeatureBase]], X, y, model) -> List[float]:
+                                       partitioned_features: List[List[FeatureBase]], X, y,
+                                       train_function, predict_function, scoring_function) -> List[float]:
     """
     Calculate mean decrease accuracy for every partition.  This is the decrease in OOB accuracy when all features
     in the partition are shuffled.
     """
-    model = copy.copy(model)
     partition_indices = list(map(lambda partition: list(map(lambda feature: index_feature_in_list(feature, features), partition)), partitioned_features))
     scores = [[] for _ in range(len(partition_indices))]
     rs = ShuffleSplit(n_splits=3, test_size=0.2, random_state=42)
     for train_index, test_index in rs.split(X):
-        X_train, X_test = X.iloc[train_index], X.iloc[test_index]
-        y_train, y_test = y.iloc[train_index], y.iloc[test_index]
-        model.fit(X_train, y_train)
-        y_pred = model.predict(X_test)
-        base_accuracy = roc_auc_score(y_test, y_pred)
+        X_train, X_test = X[train_index], X[test_index]
+        y_train, y_test = y[train_index], y[test_index]
+        model = train_function(X_train, y_train)
+        y_pred = predict_function(model, X_test)
+        base_accuracy = scoring_function(y_test, y_pred)
         for i, feature_indices in enumerate(partition_indices):
             for feature_index in feature_indices:
-                X_test_copy = X_test.values.copy()
+                X_test_copy = X_test.copy()
                 np.random.shuffle(X_test_copy[:, feature_index])
-                shuffle_accuracy = roc_auc_score(y_test, model.predict(X_test_copy))
+                y_pred = predict_function(model, X_test_copy)
+                shuffle_accuracy = scoring_function(y_test, y_pred)
                 scores[i].append(base_accuracy - shuffle_accuracy)
     return list(map(np.average, scores))

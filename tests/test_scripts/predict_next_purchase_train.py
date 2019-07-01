@@ -3,10 +3,11 @@ import time
 
 import featuretools as ft
 import pandas as pd
-import predict_next_purchase_utils as utils
+from willump_dfs.evaluation.willump_dfs_utils import feature_in_list
 from sklearn.ensemble import RandomForestClassifier
 from sklearn.model_selection import cross_val_score, train_test_split
 from sklearn.metrics import roc_auc_score
+import predict_next_purchase_utils as utils
 
 from willump_dfs.evaluation.willump_dfs_graph_builder import *
 
@@ -45,9 +46,7 @@ if __name__ == '__main__':
     X = X.fillna(0)
     y = X.pop("label")
 
-    clf = RandomForestClassifier(n_estimators=400, n_jobs=1)
-    # Select top features.
-    clf.fit(X, y)
+    clf = utils.pnp_train_function(X, y)
     top_features = utils.feature_importances(clf, features_encoded, n=20)
     # top_features = ft.load_features(resources_folder + "top_features.dfs")
 
@@ -67,7 +66,11 @@ if __name__ == '__main__':
 
     partition_times = willump_dfs_time_partitioned_features(partitioned_features, es, label_times)
     partition_importances = \
-        willump_dfs_mean_decrease_accuracy(top_features, partitioned_features, top_feature_matrix_train, y_train, clf)
+        willump_dfs_mean_decrease_accuracy(top_features, partitioned_features,
+                                           top_feature_matrix_train.values, y_train.values,
+                                           train_function=utils.pnp_train_function,
+                                           predict_function=utils.pnp_predict_function,
+                                           scoring_function=roc_auc_score)
 
     more_important_features, less_important_features = \
         willump_dfs_find_efficient_features(partitioned_features,
@@ -76,7 +79,7 @@ if __name__ == '__main__':
 
     for i, (features, cost, importance) in enumerate(zip(partitioned_features, partition_times, partition_importances)):
         print("%d Features: %s\nCost: %f  Importance: %f  Efficient: %r" % (i, features, cost, importance, all(
-            utils.feature_in_list(feature, more_important_features) for feature in features)))
+            feature_in_list(feature, more_important_features) for feature in features)))
 
     small_model, full_model = willump_dfs_train_models(more_important_features=more_important_features,
                                                        less_important_features=less_important_features,

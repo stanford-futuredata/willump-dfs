@@ -2,6 +2,7 @@ from sklearn.model_selection import train_test_split
 import xgboost as xgb
 import numpy as np
 import pandas as pd
+from sklearn.metrics import mean_squared_error
 
 
 def read_data(TRAIN_DIR, nrows=None):
@@ -25,7 +26,7 @@ def read_data(TRAIN_DIR, nrows=None):
 
 
 def train_xgb(X_train, labels):
-    Xtr, Xv, ytr, yv = train_test_split(X_train.values,
+    Xtr, Xv, ytr, yv = train_test_split(X_train,
                                         labels,
                                         test_size=0.2,
                                         random_state=0)
@@ -53,7 +54,10 @@ def train_xgb(X_train, labels):
 
 
 def predict_xgb(model, X_test):
-    dtest = xgb.DMatrix(X_test.values)
-    ytest = model.predict(dtest)
-    X_test['trip_duration'] = np.exp(ytest) - 1
-    return X_test[['trip_duration']]
+    dtest = xgb.DMatrix(X_test)
+    y_test = model.predict(dtest)
+    return y_test
+
+
+def rmse_scoring(y_true, y_pred):
+    return 1 - np.log(mean_squared_error(y_true, y_pred))

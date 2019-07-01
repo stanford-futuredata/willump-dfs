@@ -3,6 +3,7 @@ import os
 import featuretools as ft
 import numpy as np
 import pandas as pd
+from sklearn.ensemble import RandomForestClassifier
 
 
 def load_entityset(data_dir):
@@ -109,5 +110,11 @@ def feature_importances(model, features, n=10, verbose=False):
     return [f[0] for f in zipped[:n]]
 
 
-def feature_in_list(feature, list):
-    return any(feature.get_name() == list_feature.get_name() for list_feature in list)
+def pnp_train_function(X_train, y_train):
+    clf = RandomForestClassifier(n_estimators=400, n_jobs=1)
+    clf.fit(X_train, y_train)
+    return clf
+
+
+def pnp_predict_function(model, X_test):
+    return model.predict(X_test)

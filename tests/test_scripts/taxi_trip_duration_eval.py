@@ -8,6 +8,9 @@ from featuretools import variable_types as vtypes
 from featuretools.primitives import TransformPrimitive
 from featuretools.primitives import make_trans_primitive
 from featuretools.variable_types import Boolean, LatLong
+from sklearn.model_selection import train_test_split
+from willump_dfs.evaluation.willump_dfs_graph_builder import *
+from willump_dfs.evaluation.willump_dfs_utils import feature_in_list
 
 
 def haversine(latlong1, latlong2):
@@ -93,7 +96,10 @@ resources_folder = "tests/test_resources/predict_taxi_duration/"
 TRAIN_DIR = resources_folder + "train.csv"
 
 if __name__ == "__main__":
-    data = taxi_utils.read_data(TRAIN_DIR)
+    data = taxi_utils.read_data(TRAIN_DIR, 100000)
+    labels = data[["id", "trip_duration"]]
+    labels.set_index("id")
+    data = data.drop("trip_duration", axis=1)
 
     data["pickup_latlong"] = data[['pickup_latitude', 'pickup_longitude']].apply(tuple, axis=1)
     data["dropoff_latlong"] = data[['dropoff_latitude', 'dropoff_longitude']].apply(tuple, axis=1)
@@ -123,6 +129,7 @@ if __name__ == "__main__":
                         index="passenger_count")
 
     cutoff_time = es['trips'].df[['id', 'pickup_datetime']]
+    cutoff_time = cutoff_time.merge(labels)
 
     Bearing = make_trans_primitive(function=bearing,
                                    input_types=[LatLong, LatLong],
@@ -158,7 +165,15 @@ if __name__ == "__main__":
     # this allows us to create features that are conditioned on a second value before we calculate.
     es.add_interesting_values()
 
-    # calculate feature_matrix using deep feature synthesis
+    cutoff_train, cutoff_valid = train_test_split(cutoff_time, test_size=0.2, random_state=42)
+    cutoff_train = cutoff_train.sort_values(by=["id"])
+    cutoff_valid = cutoff_valid.sort_values(by=["id"])
+    y_train = cutoff_train.pop("trip_duration")
+    y_train = np.log(y_train.values + 1)
+    y_valid = cutoff_valid.pop("trip_duration")
+    y_valid = np.log(y_valid.values + 1)
+
+    # Calculate feature_matrix using deep feature synthesis
     if not os.path.exists(resources_folder + "top_features.dfs"):
         _, features = ft.dfs(entityset=es,
                              target_entity="trips",
@@ -166,18 +181,36 @@ if __name__ == "__main__":
                              agg_primitives=agg_primitives,
                              drop_contains=['trips.test_data'],
                              verbose=True,
-                             cutoff_time=cutoff_time,
+                             cutoff_time=cutoff_train,
                              approximate='36d',
                              max_depth=4)
         ft.save_features(features, resources_folder + "top_features.dfs")
 
     features = ft.load_features(resources_folder + "top_features.dfs")
 
-    feature_matrix = ft.calculate_feature_matrix(features,
-                                                 entityset=es,
-                                                 cutoff_time=cutoff_time,
-                                                 approximate='36d')
-    labels = feature_matrix.pop("trip_duration")
-    labels = np.log(labels.values + 1)
+    feature_matrix_train = ft.calculate_feature_matrix(features,
+                                                       entityset=es,
+                                                       cutoff_time=cutoff_train,
+                                                       approximate='36d')
 
-    model = taxi_utils.train_xgb(feature_matrix, labels)
+    feature_matrix_valid = ft.calculate_feature_matrix(features,
+                                                       entityset=es,
+                                                       cutoff_time=cutoff_valid,
+                                                       approximate='36d')
+
+    partitioned_features = willump_dfs_partition_features(features)
+    partition_times = willump_dfs_time_partitioned_features(partitioned_features, es, cutoff_train, approximate='36d')
+    partition_importances = \
+        willump_dfs_mean_decrease_accuracy(features, partitioned_features, feature_matrix_train.values, y_train,
+                                           train_function=taxi_utils.train_xgb,
+                                           predict_function=taxi_utils.predict_xgb,
+                                           scoring_function=taxi_utils.rmse_scoring)
+
+    more_important_features, less_important_features = \
+        willump_dfs_find_efficient_features(partitioned_features,
+                                            partition_costs=partition_times,
+                                            partition_importances=partition_importances)
+
+    for i, (features, cost, importance) in enumerate(zip(partitioned_features, partition_times, partition_importances)):
+        print("%d Features: %s\nCost: %f  Importance: %f  Efficient: %r" % (i, features, cost, importance, all(
+            feature_in_list(feature, more_important_features) for feature in features)))
