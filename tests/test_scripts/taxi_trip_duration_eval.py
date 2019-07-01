@@ -212,3 +212,34 @@ if __name__ == "__main__":
     for i, (features, cost, importance) in enumerate(zip(partitioned_features, partition_times, partition_importances)):
         print("%d Features: %s\nCost: %f  Importance: %f  Efficient: %r" % (i, features, cost, importance, all(
             feature_in_list(feature, more_important_features) for feature in features)))
+
+    small_model, full_model = willump_dfs_train_models(more_important_features=more_important_features,
+                                                       less_important_features=less_important_features,
+                                                       entity_set=es,
+                                                       training_times=cutoff_train,
+                                                       y_train=y_train,
+                                                       train_function=taxi_utils.train_xgb,
+                                                       approximate='36d')
+
+    mi_t0 = time.time()
+    mi_feature_matrix_test = ft.calculate_feature_matrix(more_important_features,
+                                                         entityset=es,
+                                                         cutoff_time=cutoff_valid,
+                                                         approximate='36d')
+    mi_preds = taxi_utils.predict_xgb(small_model, mi_feature_matrix_test)
+    mi_time_elapsed = time.time() - mi_t0
+    mi_score = 1 - taxi_utils.rmse_scoring(y_valid, mi_preds)
+
+    full_t0 = time.time()
+    full_feature_matrix_test = ft.calculate_feature_matrix(more_important_features + less_important_features,
+                                                           entityset=es,
+                                                           cutoff_time=cutoff_valid,
+                                                           approximate='36d')
+    full_preds = taxi_utils.predict_xgb(full_model, full_feature_matrix_test)
+    full_time_elapsed = time.time() - full_t0
+    full_score = 1 - taxi_utils.rmse_scoring(y_valid, full_preds)
+
+    print("More important features time: %f  Full feature time: %f" %
+          (mi_time_elapsed, full_time_elapsed))
+    print("More important features RMSE: %f  Full features RMSE: %f" %
+          (mi_score, full_score))

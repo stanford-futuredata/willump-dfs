@@ -85,20 +85,20 @@ def willump_dfs_find_efficient_features(partitioned_features: List[List[FeatureB
 
 
 def willump_dfs_train_models(more_important_features: List[FeatureBase], less_important_features: List[FeatureBase],
-                             entity_set, training_times, y_train, model):
-    small_model = copy.copy(model)
-    full_model = copy.copy(model)
+                             entity_set, training_times, y_train, train_function, approximate=None):
     full_features = more_important_features + less_important_features
     mi_feature_matrix = ft.calculate_feature_matrix(more_important_features,
                                                     entityset=entity_set,
-                                                    cutoff_time=training_times)
+                                                    cutoff_time=training_times,
+                                                    approximate=approximate)
     mi_feature_matrix = mi_feature_matrix.fillna(0)
-    small_model.fit(mi_feature_matrix, y_train)
+    small_model = train_function(mi_feature_matrix, y_train)
     full_feature_matrix = ft.calculate_feature_matrix(full_features,
                                                       entityset=entity_set,
-                                                      cutoff_time=training_times)
+                                                      cutoff_time=training_times,
+                                                      approximate=approximate)
     full_feature_matrix = full_feature_matrix.fillna(0)
-    full_model.fit(full_feature_matrix, y_train)
+    full_model = train_function(full_feature_matrix, y_train)
     return small_model, full_model
 
 

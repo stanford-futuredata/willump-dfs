@@ -60,4 +60,4 @@ def predict_xgb(model, X_test):
 
 
 def rmse_scoring(y_true, y_pred):
-    return 1 - np.log(mean_squared_error(y_true, y_pred))
+    return 1 - np.sqrt(mean_squared_error(y_true, y_pred))

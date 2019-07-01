@@ -86,7 +86,7 @@ if __name__ == '__main__':
                                                        entity_set=es,
                                                        training_times=label_times_train,
                                                        y_train=y_train,
-                                                       model=clf)
+                                                       train_function=utils.pnp_train_function)
 
     mi_t0 = time.time()
     mi_feature_matrix_test = ft.calculate_feature_matrix(more_important_features,
