@@ -1,15 +1,13 @@
+import os
+
 import featuretools as ft
-import pandas as pd
 import numpy as np
+import pandas as pd
 import taxi_trip_duration_utils as taxi_utils
-
 from featuretools import variable_types as vtypes
-from featuretools.variable_types import LatLong
-
 from featuretools.primitives import TransformPrimitive
+from featuretools.primitives import make_trans_primitive
 from featuretools.variable_types import Boolean, LatLong
-
-from featuretools.primitives import make_agg_primitive, make_trans_primitive
 
 
 def haversine(latlong1, latlong2):
@@ -95,13 +93,7 @@ resources_folder = "tests/test_resources/predict_taxi_duration/"
 TRAIN_DIR = resources_folder + "train.csv"
 
 if __name__ == "__main__":
-    data_train = taxi_utils.read_data(TRAIN_DIR)
-    # Make a train/test column
-    data_train['test_data'] = False
-
-    # Combine the data and convert some strings
-    data = pd.concat([data_train], sort=True)
-    print(data.head(5))
+    data = taxi_utils.read_data(TRAIN_DIR)
 
     data["pickup_latlong"] = data[['pickup_latitude', 'pickup_longitude']].apply(tuple, axis=1)
     data["dropoff_latlong"] = data[['dropoff_latitude', 'dropoff_longitude']].apply(tuple, axis=1)
@@ -167,20 +159,25 @@ if __name__ == "__main__":
     es.add_interesting_values()
 
     # calculate feature_matrix using deep feature synthesis
-    feature_matrix, features = ft.dfs(entityset=es,
-                                      target_entity="trips",
-                                      trans_primitives=trans_primitives,
-                                      agg_primitives=agg_primitives,
-                                      drop_contains=['trips.test_data'],
-                                      verbose=True,
-                                      cutoff_time=cutoff_time,
-                                      approximate='36d',
-                                      max_depth=4)
+    if not os.path.exists(resources_folder + "top_features.dfs"):
+        _, features = ft.dfs(entityset=es,
+                             target_entity="trips",
+                             trans_primitives=trans_primitives,
+                             agg_primitives=agg_primitives,
+                             drop_contains=['trips.test_data'],
+                             verbose=True,
+                             cutoff_time=cutoff_time,
+                             approximate='36d',
+                             max_depth=4)
+        ft.save_features(features, resources_folder + "top_features.dfs")
 
-    print(feature_matrix.head())
+    features = ft.load_features(resources_folder + "top_features.dfs")
 
-    # separates the whole feature matrix into train data feature matrix, train data labels, and test data feature matrix
-    X_train, labels, X_test = taxi_utils.get_train_test_fm(feature_matrix)
+    feature_matrix = ft.calculate_feature_matrix(features,
+                                                 entityset=es,
+                                                 cutoff_time=cutoff_time,
+                                                 approximate='36d')
+    labels = feature_matrix.pop("trip_duration")
     labels = np.log(labels.values + 1)
 
-    model = taxi_utils.train_xgb(X_train, labels)
+    model = taxi_utils.train_xgb(feature_matrix, labels)

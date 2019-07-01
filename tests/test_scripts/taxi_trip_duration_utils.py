@@ -16,10 +16,10 @@ def read_data(TRAIN_DIR, nrows=None):
 
     xlim = [-74.03, -73.77]
     ylim = [40.63, 40.85]
-    data_train = data_train[(data_train.pickup_longitude> xlim[0]) & (data_train.pickup_longitude < xlim[1])]
-    data_train = data_train[(data_train.dropoff_longitude> xlim[0]) & (data_train.dropoff_longitude < xlim[1])]
-    data_train = data_train[(data_train.pickup_latitude> ylim[0]) & (data_train.pickup_latitude < ylim[1])]
-    data_train = data_train[(data_train.dropoff_latitude> ylim[0]) & (data_train.dropoff_latitude < ylim[1])]
+    data_train = data_train[(data_train.pickup_longitude > xlim[0]) & (data_train.pickup_longitude < xlim[1])]
+    data_train = data_train[(data_train.dropoff_longitude > xlim[0]) & (data_train.dropoff_longitude < xlim[1])]
+    data_train = data_train[(data_train.pickup_latitude > ylim[0]) & (data_train.pickup_latitude < ylim[1])]
+    data_train = data_train[(data_train.dropoff_latitude > ylim[0]) & (data_train.dropoff_latitude < ylim[1])]
 
     return data_train
 
@@ -57,43 +57,3 @@ def predict_xgb(model, X_test):
     ytest = model.predict(dtest)
     X_test['trip_duration'] = np.exp(ytest) - 1
     return X_test[['trip_duration']]
-
-
-def feature_importances(model, feature_names):
-    feature_importance_dict = model.get_fscore()
-    fs = ['f%i' % i for i in range(len(feature_names))]
-    f1 = pd.DataFrame({'f': list(feature_importance_dict.keys()),
-                       'importance': list(feature_importance_dict.values())})
-    f2 = pd.DataFrame({'f': fs, 'feature_name': feature_names})
-    feature_importance = pd.merge(f1, f2, how='right', on='f')
-    feature_importance = feature_importance.fillna(0)
-    return feature_importance[['feature_name', 'importance']].sort_values(by='importance',
-                                                                          ascending=False)
-
-
-def get_train_test_fm(feature_matrix):
-    X_train = feature_matrix[feature_matrix['test_data'] == False]
-    X_train = X_train.drop(['test_data'], axis=1)
-    labels = X_train['trip_duration']
-    X_train = X_train.drop(['trip_duration'], axis=1)
-    X_test = feature_matrix[feature_matrix['test_data'] == True]
-    X_test = X_test.drop(['test_data', 'trip_duration'], axis=1)
-    return (X_train, labels, X_test)
-
-
-def duplicate_columns(frame):
-    groups = frame.columns.to_series().groupby(frame.dtypes).groups
-    dups = []
-    for t, v in groups.items():
-        dcols = frame[v].to_dict(orient="list")
-
-        vs = dcols.values()
-        ks = dcols.keys()
-        lvs = len(vs)
-
-        for i in range(lvs):
-            for j in range(i+1,lvs):
-                if vs[i] == vs[j]:
-                    dups.append(ks[i])
-                    break
-    return dups
