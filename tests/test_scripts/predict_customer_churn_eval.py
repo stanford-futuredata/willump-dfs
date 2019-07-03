@@ -8,10 +8,28 @@ from featuretools.primitives import make_agg_primitive
 from sklearn.ensemble import RandomForestClassifier
 from sklearn.metrics import roc_auc_score
 
+from willump_dfs.evaluation.willump_dfs_utils import feature_in_list
+from willump_dfs.evaluation.willump_dfs_graph_builder import *
+
 N_PARTITIONS = 1000
 
 resources_folder = "tests/test_resources/predict_customer_churn/"
 partitions_dir = resources_folder + 'partitions/'
+
+debug = False
+
+
+def pcc_train_function(X, y):
+    model = RandomForestClassifier(n_estimators=100, max_depth=40,
+                                   min_samples_leaf=50,
+                                   n_jobs=1, class_weight='balanced',
+                                   random_state=50)
+    model.fit(X, y)
+    return model
+
+
+def pcc_eval_function(model, X_valid):
+    return model.predict(X_valid)
 
 
 def partition_to_entity_set(partition, cutoff_time_name='MS-31_labels.csv'):
@@ -121,7 +139,8 @@ agg_primitives = ['sum', 'time_since_last', 'avg_time_between', 'all', 'mode', '
 trans_primitives = ['is_weekend', 'cum_sum', 'day', 'month', 'diff', 'time_since_previous']
 where_primitives = ['sum', 'mean', 'percent_true', 'all', 'any']
 
-cutoff_times = cutoff_times[:100]
+if debug:
+    cutoff_times = cutoff_times[:1000]
 
 if not os.path.exists(resources_folder + "features.dfs"):
     feature_matrix, feature_defs = ft.dfs(entityset=es, target_entity='members',
@@ -171,30 +190,78 @@ feature_matrix_train = ft.calculate_feature_matrix(feature_defs,
                                                    entityset=es,
                                                    cutoff_time=cutoff_train,
                                                    verbose=True).drop(columns=['days_to_churn', 'churn_date'])
-feature_matrix_train = feature_matrix_train.replace({np.inf: np.nan, -np.inf: np.nan}).\
+feature_matrix_train = feature_matrix_train.replace({np.inf: np.nan, -np.inf: np.nan}). \
     fillna(feature_matrix_train.median())
 
 feature_matrix_valid = ft.calculate_feature_matrix(feature_defs,
                                                    entityset=es,
                                                    cutoff_time=cutoff_valid,
                                                    verbose=True).drop(columns=['days_to_churn', 'churn_date'])
-feature_matrix_valid = feature_matrix_valid.replace({np.inf: np.nan, -np.inf: np.nan}).\
+feature_matrix_valid = feature_matrix_valid.replace({np.inf: np.nan, -np.inf: np.nan}). \
     fillna(feature_matrix_valid.median())
 
-y, test_y = np.array(feature_matrix_train.pop('label')), np.array(feature_matrix_valid.pop('label'))
+train_y, test_y = np.array(feature_matrix_train.pop('label')), np.array(feature_matrix_valid.pop('label'))
 
-model = RandomForestClassifier(n_estimators=100, max_depth=40,
-                               min_samples_leaf=50,
-                               n_jobs=-1, class_weight='balanced',
-                               random_state=50)
+partitioned_features = willump_dfs_partition_features(feature_defs)
 
+partition_times = willump_dfs_time_partitioned_features(partitioned_features, es, cutoff_train)
+partition_importances = \
+    willump_dfs_mean_decrease_accuracy(feature_defs, partitioned_features,
+                                       feature_matrix_train.values, train_y,
+                                       train_function=pcc_train_function,
+                                       predict_function=pcc_eval_function,
+                                       scoring_function=roc_auc_score)
 
-model.fit(feature_matrix_train, y)
+more_important_features, less_important_features = \
+    willump_dfs_find_efficient_features(partitioned_features,
+                                        partition_costs=partition_times,
+                                        partition_importances=partition_importances)
 
-preds = model.predict(feature_matrix_valid)
+for i, (features, cost, importance) in enumerate(zip(partitioned_features, partition_times, partition_importances)):
+    print("%d Features: %s\nCost: %f  Importance: %f  Efficient: %r" % (i, features, cost, importance, all(
+        feature_in_list(feature, more_important_features) for feature in features)))
 
-acc = roc_auc_score(test_y, preds)
+mi_feature_matrix_train = ft.calculate_feature_matrix(more_important_features,
+                                                      entityset=es,
+                                                      cutoff_time=cutoff_train,
+                                                      verbose=True).drop(
+    columns=['days_to_churn', 'churn_date', 'label'])
+mi_feature_matrix_train = mi_feature_matrix_train.replace({np.inf: np.nan, -np.inf: np.nan}). \
+    fillna(mi_feature_matrix_train.median())
+small_model = pcc_train_function(mi_feature_matrix_train, train_y)
 
-print("AUC Score: %f" % acc)
+full_feature_matrix_train = ft.calculate_feature_matrix(more_important_features + less_important_features,
+                                                        entityset=es,
+                                                        cutoff_time=cutoff_train,
+                                                        verbose=True).drop(
+    columns=['days_to_churn', 'churn_date', 'label'])
+full_feature_matrix_train = full_feature_matrix_train.replace({np.inf: np.nan, -np.inf: np.nan}). \
+    fillna(full_feature_matrix_train.median())
+full_model = pcc_train_function(full_feature_matrix_train, train_y)
 
+mi_t0 = time.time()
+mi_feature_matrix_test = ft.calculate_feature_matrix(more_important_features,
+                                                     entityset=es,
+                                                     cutoff_time=cutoff_valid).drop(
+    columns=['days_to_churn', 'churn_date', "label"])
+mi_feature_matrix_test = mi_feature_matrix_test.replace({np.inf: np.nan, -np.inf: np.nan}). \
+    fillna(mi_feature_matrix_test.median())
+mi_preds = small_model.predict(mi_feature_matrix_test)
+mi_time_elapsed = time.time() - mi_t0
+mi_score = roc_auc_score(test_y, mi_preds)
 
+full_t0 = time.time()
+full_feature_matrix_test = ft.calculate_feature_matrix(more_important_features + less_important_features,
+                                                       entityset=es,
+                                                       cutoff_time=cutoff_valid).drop(
+    columns=['days_to_churn', 'churn_date', "label"])
+full_feature_matrix_test = full_feature_matrix_test.replace({np.inf: np.nan, -np.inf: np.nan}). \
+    fillna(full_feature_matrix_test.median())
+full_preds = full_model.predict(full_feature_matrix_test)
+full_time_elapsed = time.time() - full_t0
+full_score = roc_auc_score(test_y, full_preds)
+
+print("More important features time: %f  Full feature time: %f" %
+      (mi_time_elapsed, full_time_elapsed))
+print("More important features AUC: %f  Full features AUC: %f" %
+      (mi_score, full_score))

@@ -1,4 +1,3 @@
-import copy
 import time
 from typing import List, Tuple
 
@@ -6,7 +5,6 @@ import featuretools as ft
 import numpy as np
 import pandas as pd
 from featuretools.feature_base.feature_base import FeatureBase
-from sklearn.metrics import roc_auc_score
 from sklearn.model_selection import ShuffleSplit
 
 from willump_dfs.evaluation.willump_dfs_utils import index_feature_in_list
