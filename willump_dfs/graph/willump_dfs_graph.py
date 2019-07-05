@@ -18,19 +18,19 @@ class WillumpDFSGraph(object):
         Add a new top-level feature to the graph.
         """
 
-        self._top_level_features[feature.get_name()] = feature
+        self._top_level_features[feature] = feature
 
         def make_node_for_feature(feature: FeatureBase) -> WillumpDFSGraphNode:
-            if feature.get_name() in self._graph_dict:
-                return self._graph_dict[feature.get_name()]
+            if feature in self._graph_dict:
+                return self._graph_dict[feature]
             feature_dependencies: List[FeatureBase] = feature.get_dependencies(deep=False)
             if len(feature_dependencies) == 0:
                 feature_node = WillumpDFSGraphNode(feature, None)
-                self._graph_dict[feature.get_name()] = feature_node
+                self._graph_dict[feature] = feature_node
                 return feature_node
             graph_dependencies = list(map(make_node_for_feature, feature_dependencies))
             feature_node = WillumpDFSGraphNode(feature, graph_dependencies)
-            self._graph_dict[feature.get_name()] = feature_node
+            self._graph_dict[feature] = feature_node
             return feature_node
 
         feature_node = make_node_for_feature(feature)
@@ -76,7 +76,7 @@ class WillumpDFSGraph(object):
         # Replace features with original versions with correct entity IDs.
         for partition_features in list_of_partitions:
             for i, partition_feature in enumerate(partition_features):
-                partition_features[i] = self._top_level_features[partition_feature.get_name()]
+                partition_features[i] = self._top_level_features[partition_feature]
         return list_of_partitions
 
     def __str__(self) -> str:
