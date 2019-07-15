@@ -120,4 +120,7 @@ if __name__ == '__main__':
           (mi_score, full_score, cascade_score))
 
     # Save top features.
-    ft.save_features(top_features, resources_folder + "top_features.dfs")
+    ft.save_features(more_important_features + less_important_features, resources_folder + "top_features.dfs")
+    pickle.dump(full_model, open(resources_folder + "full_model.pk", "wb"))
+    ft.save_features(more_important_features, resources_folder + "mi_features.dfs")
+    pickle.dump(small_model, open(resources_folder + "small_model.pk", "wb"))
