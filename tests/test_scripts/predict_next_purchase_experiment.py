@@ -13,6 +13,33 @@ data_large = "data_large"
 
 data_folder = data_large
 
+MAX_ORDERS_PER_PERSON = 30
+
+
+def sample_es(es):
+    order_products = es.entities[0].df
+    orders = es.entities[1].df
+
+    print("Before: %d orders, %d order_products" % (len(orders), len(order_products)))
+
+    def sample_function(table):
+        length = len(table)
+        if length > MAX_ORDERS_PER_PERSON:
+            table = table.sample(n=MAX_ORDERS_PER_PERSON, random_state=42)
+        return table
+
+    orders = orders.groupby("user_id", sort=False, as_index=False) \
+        .apply(sample_function).set_index("order_id", drop=False)
+
+    good_ids = orders["order_id"].values
+    order_products = order_products[order_products["order_id"].isin(good_ids)]
+
+    print("After: %d orders, %d order_products" % (len(orders), len(order_products)))
+
+    es.entities[0].df = order_products
+    es.entities[1].df = orders
+
+
 if __name__ == '__main__':
 
     try:
@@ -37,6 +64,8 @@ if __name__ == '__main__':
     label_times_test = label_times_test.sort_values(by=["user_id"])
     y_train = label_times_train.pop("label")
     y_test = label_times_test.pop("label")
+
+    sample_es(es)
 
     # Train model with top features.
     full_t0 = time.time()
