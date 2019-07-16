@@ -36,8 +36,36 @@ def sample_es(es):
 
     print("After: %d orders, %d order_products" % (len(orders), len(order_products)))
 
-    es.entities[0].df = order_products
-    es.entities[1].df = orders
+    es.entity_from_dataframe(entity_id="order_products_sampled",
+                             dataframe=order_products,
+                             index="order_product_id",
+                             variable_types={"aisle_id": ft.variable_types.Categorical,
+                                             "reordered": ft.variable_types.Boolean},
+                             time_index="order_time")
+
+    es.entity_from_dataframe(entity_id="orders_sampled",
+                             dataframe=orders,
+                             index="order_id",
+                             time_index="order_time")
+
+    es.add_relationship(ft.Relationship(es["orders_sampled"]["order_id"], es["order_products_sampled"]["order_id"]))
+    es.normalize_entity(base_entity_id="orders_sampled", new_entity_id="users", index="user_id")
+
+
+def feature_to_sample(feature, entities_map, new_metadata):
+    feature_id = feature.entity_id
+    feature.entityset = new_metadata
+    if isinstance(feature.relationship_path, list):
+        relationship = feature.relationship_path[0][1]
+        relationship.entityset = new_metadata
+        if relationship._parent_entity_id in entities_map:
+            relationship._parent_entity_id = entities_map[relationship._parent_entity_id]
+        if relationship._child_entity_id in entities_map:
+            relationship._child_entity_id = entities_map[relationship._child_entity_id]
+    if feature_id in entities_map:
+        feature.entity_id = entities_map[feature_id]
+    for base_feature in feature.base_features:
+        feature_to_sample(base_feature, entities_map, new_metadata)
 
 
 if __name__ == '__main__':
@@ -66,6 +94,8 @@ if __name__ == '__main__':
     y_test = label_times_test.pop("label")
 
     sample_es(es)
+    feature_to_sample(use_features[1],
+                      {"orders": "orders_sampled", "order_products": "order_products_sampled"}, es.metadata)
 
     # Train model with top features.
     full_t0 = time.time()
