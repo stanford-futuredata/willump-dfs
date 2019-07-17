@@ -3,6 +3,7 @@ import os
 import featuretools as ft
 import featuretools.variable_types as vtypes
 import numpy as np
+import pickle
 import pandas as pd
 from featuretools.primitives import make_agg_primitive
 from sklearn.ensemble import RandomForestClassifier
@@ -265,3 +266,8 @@ print("More important features time: %f  Full feature time: %f" %
       (mi_time_elapsed, full_time_elapsed))
 print("More important features AUC: %f  Full features AUC: %f" %
       (mi_score, full_score))
+
+ft.save_features(more_important_features + less_important_features, resources_folder + "top_features.dfs")
+ft.save_features(more_important_features, resources_folder + "mi_features.dfs")
+pickle.dump(small_model, open(resources_folder + "small_model.pk", "wb"))
+pickle.dump(full_model, open(resources_folder + "full_model.pk", "wb"))
