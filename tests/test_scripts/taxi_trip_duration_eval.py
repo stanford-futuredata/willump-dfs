@@ -1,4 +1,5 @@
 import os
+import pickle
 
 import featuretools as ft
 import numpy as np
@@ -182,7 +183,6 @@ if __name__ == "__main__":
                              cutoff_time=cutoff_train,
                              approximate='36d',
                              max_depth=4)
-        ft.save_features(features, resources_folder + "top_features.dfs")
 
     features = ft.load_features(resources_folder + "top_features.dfs")
 
@@ -243,3 +243,8 @@ if __name__ == "__main__":
           (mi_time_elapsed, full_time_elapsed))
     print("More important features RMSE: %f  Full features RMSE: %f" %
           (mi_score, full_score))
+
+    ft.save_features(more_important_features + less_important_features, resources_folder + "top_features.dfs")
+    ft.save_features(more_important_features, resources_folder + "mi_features.dfs")
+    pickle.dump(small_model, open(resources_folder + "small_model.pk", "wb"))
+    pickle.dump(full_model, open(resources_folder + "full_model.pk", "wb"))
