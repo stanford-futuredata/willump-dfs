@@ -1,19 +1,44 @@
 import pickle
 import copy
 
-from sklearn.metrics import roc_auc_score
-from sklearn.model_selection import train_test_split
-
-import predict_next_purchase_utils as utils
-from willump_dfs.evaluation.willump_dfs_graph_builder import *
-from featuretools.feature_base.feature_base import AggregationFeature, IdentityFeature, TransformFeature
-from predict_customer_churn_eval import partition_to_entity_set, total_previous_month
 from featuretools.primitives import make_agg_primitive
+from sklearn.metrics import roc_auc_score
+
+from predict_customer_churn_eval import partition_to_entity_set, total_previous_month
+from willump_dfs.evaluation.willump_dfs_graph_builder import *
 
 resources_folder = "tests/test_resources/predict_customer_churn/"
 partitions_dir = resources_folder + 'partitions/'
 
 debug = False
+
+MAX_LOGS_PER_MEMBER = 30
+
+
+def sample_es(es):
+    new_es = copy.deepcopy(es)
+
+    transactions = new_es.entities[1].df
+    logs = new_es.entities[2].df
+
+    print("Before: %d transactions, %d logs" % (len(transactions), len(logs)))
+
+    def sample_function(table):
+        length = len(table)
+        if length > MAX_LOGS_PER_MEMBER:
+            table = table.sample(n=MAX_LOGS_PER_MEMBER, random_state=42)
+        return table
+
+    logs = logs.groupby("msno", sort=False, as_index=False) \
+        .apply(sample_function).set_index("logs_index", drop=False)
+
+    print("After: %d transactions, %d logs" % (len(transactions), len(logs)))
+
+    new_es.entities[1].df = transactions
+    new_es.entities[2].df = logs
+
+    return new_es
+
 
 if __name__ == '__main__':
 
@@ -31,13 +56,13 @@ if __name__ == '__main__':
 
     partitioned_features = willump_dfs_partition_features(use_features)
 
-    for i, (features) in enumerate(zip(partitioned_features)):
-        print("%d Features: %s" % (i, features))
+    # for i, (features) in enumerate(zip(partitioned_features)):
+    #     print("%d Features: %s" % (i, features))
 
     split_date = pd.datetime(2016, 8, 1)
     cutoff_valid = cutoff_times.loc[cutoff_times['cutoff_time'] >= split_date].copy()
 
-    sampled_es = es
+    sampled_es = sample_es(es)
 
     # Evaluate model.
     full_t0 = time.time()
@@ -50,6 +75,7 @@ if __name__ == '__main__':
         fillna(mi_feature_matrix_test.median())
     mi_preds = small_model.predict(mi_feature_matrix_test)
     full_time_elapsed = time.time() - full_t0
+
     mi_score = roc_auc_score(test_y, mi_preds)
 
     print("Time: %f  AUC: %f  Length %d" % (full_time_elapsed, mi_score, len(cutoff_valid)))
