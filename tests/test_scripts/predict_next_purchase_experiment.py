@@ -6,6 +6,7 @@ from sklearn.model_selection import train_test_split
 
 import predict_next_purchase_utils as utils
 from willump_dfs.evaluation.willump_dfs_graph_builder import *
+from featuretools.feature_base.feature_base import AggregationFeature, IdentityFeature, TransformFeature
 
 resources_folder = "tests/test_resources/predict_next_purchase_resources/"
 
@@ -53,22 +54,41 @@ def sample_es(es):
     es.add_relationship(ft.Relationship(es["users"]["user_id"], es["orders_sampled"]["user_id"]))
 
 
-def feature_to_sample(feature, entities_map, new_metadata):
-    feature = copy.copy(feature)
-    feature_id = feature.entity_id
-    feature.entityset = new_metadata
-    if isinstance(feature.relationship_path, list):
-        relationship = feature.relationship_path[0][1]
+def feature_to_sample(feature, entities_map, new_metadata, new_es):
+    if isinstance(feature, IdentityFeature):
+        new_variable = copy.copy(feature.variable)
+        if new_variable.entity_id in entities_map:
+            new_variable.entity = new_es[entities_map[new_variable.entity_id]]
+            new_variable.entity_id = entities_map[new_variable.entity_id]
+        return IdentityFeature(new_variable)
+    elif isinstance(feature, TransformFeature):
+        new_base_features = list(map(lambda x: feature_to_sample(x, entities_map, new_metadata, new_es), feature.base_features))
+        return TransformFeature(new_base_features, feature.primitive)
+    elif isinstance(feature, AggregationFeature):
+        new_base_features = list(map(lambda x: feature_to_sample(x, entities_map, new_metadata, new_es), feature.base_features))
+        parent_entity_id = feature.parent_entity.id
+        if parent_entity_id in entities_map:
+            parent_entity_id = entities_map[parent_entity_id]
+        parent_entity = new_metadata[parent_entity_id]
+        assert(len(feature.relationship_path) == 1)
+        direction, relationship = feature.relationship_path[0]
+        relationship = copy.copy(relationship)
         relationship.entityset = new_metadata
         if relationship._parent_entity_id in entities_map:
             relationship._parent_entity_id = entities_map[relationship._parent_entity_id]
         if relationship._child_entity_id in entities_map:
             relationship._child_entity_id = entities_map[relationship._child_entity_id]
-    if feature_id in entities_map:
-        feature.entity_id = entities_map[feature_id]
-    for i, base_feature in enumerate(feature.base_features):
-        feature.base_features[i] = feature_to_sample(base_feature, entities_map, new_metadata)
-    return feature
+        return AggregationFeature(base_features=new_base_features, parent_entity=parent_entity,
+                                  primitive=feature.primitive, relationship_path=[(direction, relationship)],
+                                  use_previous=feature.use_previous, where=feature.where)
+
+
+def agg_depth(feature):
+    if isinstance(feature, AggregationFeature):
+        ret_val = 1
+    else:
+        ret_val = 0
+    return ret_val + sum(map(agg_depth, feature.base_features))
 
 
 if __name__ == '__main__':
@@ -85,10 +105,11 @@ if __name__ == '__main__':
                                     prediction_window=ft.Timedelta("4 weeks"),
                                     training_window=ft.Timedelta("60 days"))
 
-    use_features = ft.load_features(resources_folder + "mi_features.dfs")
-    model = pickle.load(open(resources_folder + "small_model.pk", "rb"))
+    use_features = ft.load_features(resources_folder + "top_features.dfs")
+    model = pickle.load(open(resources_folder + "full_model.pk", "rb"))
 
-    print("Using features: ", use_features)
+    # for feature in use_features:
+    #     print("Feature: %s  Aggregation Depth: %d" % (str(feature), agg_depth(feature)))
 
     label_times_train, label_times_test = train_test_split(label_times, test_size=0.2, random_state=42)
     label_times_train = label_times_train.sort_values(by=["user_id"])
@@ -97,8 +118,12 @@ if __name__ == '__main__':
     y_test = label_times_test.pop("label")
 
     sample_es(es)
-    use_features[1] = feature_to_sample(use_features[1],
-                      {"orders": "orders_sampled", "order_products": "order_products_sampled"}, es.metadata)
+    for i, feature in enumerate(use_features):
+        if agg_depth(feature) > 1:
+            use_features[i] = feature_to_sample(feature,
+                                                {"orders": "orders_sampled",
+                                                 "order_products": "order_products_sampled"}, es.metadata, es)
+            break
 
     # Train model with top features.
     full_t0 = time.time()
