@@ -19,8 +19,10 @@ MAX_ORDERS_PER_PERSON = 5
 
 
 def sample_es(es):
-    order_products = es.entities[0].df
-    orders = es.entities[1].df
+    new_es = copy.deepcopy(es)
+
+    order_products = new_es.entities[0].df
+    orders = new_es.entities[1].df
 
     print("Before: %d orders, %d order_products" % (len(orders), len(order_products)))
 
@@ -38,49 +40,10 @@ def sample_es(es):
 
     print("After: %d orders, %d order_products" % (len(orders), len(order_products)))
 
-    es.entity_from_dataframe(entity_id="order_products_sampled",
-                             dataframe=order_products,
-                             index="order_product_id",
-                             variable_types={"aisle_id": ft.variable_types.Categorical,
-                                             "reordered": ft.variable_types.Boolean},
-                             time_index="order_time")
+    new_es.entities[0].df = order_products
+    new_es.entities[1].df = orders
 
-    es.entity_from_dataframe(entity_id="orders_sampled",
-                             dataframe=orders,
-                             index="order_id",
-                             time_index="order_time")
-
-    es.add_relationship(ft.Relationship(es["orders_sampled"]["order_id"], es["order_products_sampled"]["order_id"]))
-    es.add_relationship(ft.Relationship(es["users"]["user_id"], es["orders_sampled"]["user_id"]))
-
-
-def feature_to_sample(feature, entities_map, new_metadata, new_es):
-    if isinstance(feature, IdentityFeature):
-        new_variable = copy.copy(feature.variable)
-        if new_variable.entity_id in entities_map:
-            new_variable.entity = new_es[entities_map[new_variable.entity_id]]
-            new_variable.entity_id = entities_map[new_variable.entity_id]
-        return IdentityFeature(new_variable)
-    elif isinstance(feature, TransformFeature):
-        new_base_features = list(map(lambda x: feature_to_sample(x, entities_map, new_metadata, new_es), feature.base_features))
-        return TransformFeature(new_base_features, feature.primitive)
-    elif isinstance(feature, AggregationFeature):
-        new_base_features = list(map(lambda x: feature_to_sample(x, entities_map, new_metadata, new_es), feature.base_features))
-        parent_entity_id = feature.parent_entity.id
-        if parent_entity_id in entities_map:
-            parent_entity_id = entities_map[parent_entity_id]
-        parent_entity = new_metadata[parent_entity_id]
-        assert(len(feature.relationship_path) == 1)
-        direction, relationship = feature.relationship_path[0]
-        relationship = copy.copy(relationship)
-        relationship.entityset = new_metadata
-        if relationship._parent_entity_id in entities_map:
-            relationship._parent_entity_id = entities_map[relationship._parent_entity_id]
-        if relationship._child_entity_id in entities_map:
-            relationship._child_entity_id = entities_map[relationship._child_entity_id]
-        return AggregationFeature(base_features=new_base_features, parent_entity=parent_entity,
-                                  primitive=feature.primitive, relationship_path=[(direction, relationship)],
-                                  use_previous=feature.use_previous, where=feature.where)
+    return new_es
 
 
 def agg_depth(feature):
@@ -108,8 +71,10 @@ if __name__ == '__main__':
     use_features = ft.load_features(resources_folder + "top_features.dfs")
     model = pickle.load(open(resources_folder + "full_model.pk", "rb"))
 
-    # for feature in use_features:
-    #     print("Feature: %s  Aggregation Depth: %d" % (str(feature), agg_depth(feature)))
+    partitioned_features = willump_dfs_partition_features(use_features)
+
+    for i, (features) in enumerate(zip(partitioned_features)):
+        print("%d Features: %s" % (i, features))
 
     label_times_train, label_times_test = train_test_split(label_times, test_size=0.2, random_state=42)
     label_times_train = label_times_train.sort_values(by=["user_id"])
@@ -117,24 +82,41 @@ if __name__ == '__main__':
     y_train = label_times_train.pop("label")
     y_test = label_times_test.pop("label")
 
-    sample_es(es)
-    for i, feature in enumerate(use_features):
-        if agg_depth(feature) > 1:
-            use_features[i] = feature_to_sample(feature,
-                                                {"orders": "orders_sampled",
-                                                 "order_products": "order_products_sampled"}, es.metadata, es)
-            break
+    sampled_es = sample_es(es)
+
+    sample_partitions = [0]
+    no_sample_partitions = [p_id for p_id in range(len(partitioned_features)) if p_id not in sample_partitions]
+    sampled_features, no_sampled_features = [], []
+    for p_id in sample_partitions:
+        sampled_features += partitioned_features[p_id]
+    for p_id in no_sample_partitions:
+        no_sampled_features += partitioned_features[p_id]
 
     # Train model with top features.
     full_t0 = time.time()
-    top_feature_matrix_test = ft.calculate_feature_matrix(use_features,
-                                                          entityset=es,
-                                                          cutoff_time=label_times_test,
-                                                          chunk_size=len(label_times_test))
-    top_feature_matrix_test = top_feature_matrix_test.fillna(0)
-    y_preds = model.predict(top_feature_matrix_test)
+    if len(sample_partitions) > 0:
+        sample_feature_matrix_test = ft.calculate_feature_matrix(sampled_features,
+                                                                 entityset=sampled_es,
+                                                                 cutoff_time=label_times_test,
+                                                                 chunk_size=len(label_times_test))
+        sample_feature_matrix_test = sample_feature_matrix_test.fillna(0)
+    no_sample_feature_matrix_test = ft.calculate_feature_matrix(no_sampled_features,
+                                                                entityset=es,
+                                                                cutoff_time=label_times_test,
+                                                                chunk_size=len(label_times_test))
+    no_sample_feature_matrix_test = no_sample_feature_matrix_test.fillna(0)
     full_time_elapsed = time.time() - full_t0
 
+    feature_names = list(map(lambda x: x.get_name(), use_features))
+
+    if len(sample_partitions) > 0:
+        feature_matrix_test = pd.concat([sample_feature_matrix_test, no_sample_feature_matrix_test], axis=1)
+
+        feature_matrix_test = feature_matrix_test[feature_names]
+    else:
+        feature_matrix_test = no_sample_feature_matrix_test[feature_names]
+
+    y_preds = model.predict(feature_matrix_test)
     score = roc_auc_score(y_test, y_preds)
 
     print("Time: %f  AUC: %f  Length %d" % (full_time_elapsed, score, len(label_times_test)))
