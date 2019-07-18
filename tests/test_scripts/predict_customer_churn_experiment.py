@@ -13,6 +13,7 @@ partitions_dir = resources_folder + 'partitions/'
 debug = False
 
 MAX_LOGS_PER_MEMBER = 30
+MAX_TRANSACTIONS_PER_MEMBER = 10000
 
 
 def sample_es(es):
@@ -23,14 +24,17 @@ def sample_es(es):
 
     print("Before: %d transactions, %d logs" % (len(transactions), len(logs)))
 
-    def sample_function(table):
+    def sample_function(table, maximum):
         length = len(table)
-        if length > MAX_LOGS_PER_MEMBER:
-            table = table.sample(n=MAX_LOGS_PER_MEMBER, random_state=42)
+        if length > maximum:
+            table = table.sample(n=maximum, random_state=42)
         return table
 
     logs = logs.groupby("msno", sort=False, as_index=False) \
-        .apply(sample_function).set_index("logs_index", drop=False)
+        .apply(sample_function, maximum=MAX_LOGS_PER_MEMBER).set_index("logs_index", drop=False)
+
+    transactions = transactions.groupby("msno", sort=False, as_index=False) \
+        .apply(sample_function, maximum=MAX_TRANSACTIONS_PER_MEMBER).set_index("transactions_index", drop=False)
 
     print("After: %d transactions, %d logs" % (len(transactions), len(logs)))
 
@@ -67,7 +71,7 @@ if __name__ == '__main__':
     # Evaluate model.
     full_t0 = time.time()
     mi_feature_matrix_test = ft.calculate_feature_matrix(use_features,
-                                                         entityset=es,
+                                                         entityset=sampled_es,
                                                          cutoff_time=cutoff_valid).drop(
         columns=['days_to_churn', 'churn_date'])
     test_y = mi_feature_matrix_test.pop('label')
