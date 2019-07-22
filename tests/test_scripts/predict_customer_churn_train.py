@@ -1,23 +1,20 @@
 import os
-
-import featuretools as ft
-import featuretools.variable_types as vtypes
-import numpy as np
 import pickle
-import pandas as pd
+
+import featuretools.variable_types as vtypes
 from featuretools.primitives import make_agg_primitive
 from sklearn.ensemble import RandomForestClassifier
 from sklearn.metrics import roc_auc_score
 
-from willump_dfs.evaluation.willump_dfs_utils import feature_in_list
 from willump_dfs.evaluation.willump_dfs_graph_builder import *
+from willump_dfs.evaluation.willump_dfs_utils import feature_in_list
 
 N_PARTITIONS = 1000
 
 resources_folder = "tests/test_resources/predict_customer_churn/"
 partitions_dir = resources_folder + 'partitions/'
 
-debug = False
+debug = True
 
 
 def pcc_train_function(X, y):
@@ -183,6 +180,8 @@ if __name__ == '__main__':
 
     feature_defs = ft.load_features(resources_folder + "features.dfs")
 
+    print("# Initial features found: %d" % len(feature_defs))
+
     split_date = pd.datetime(2016, 8, 1)
     cutoff_train = cutoff_times.loc[cutoff_times['cutoff_time'] < split_date].copy()
     cutoff_valid = cutoff_times.loc[cutoff_times['cutoff_time'] >= split_date].copy()
@@ -214,6 +213,15 @@ if __name__ == '__main__':
                                            predict_function=pcc_eval_function,
                                            scoring_function=roc_auc_score)
 
+    num_partitions = len(partitioned_features)
+    remove_indices = []
+    for i, (feature, cost, importance) in enumerate(zip(partitioned_features, partition_times, partition_importances)):
+        if importance <= 0:
+            remove_indices.append(i)
+    partitioned_features = [partitioned_features[i] for i in range(num_partitions) if i not in remove_indices]
+    partition_times = [partition_times[i] for i in range(num_partitions) if i not in remove_indices]
+    partition_importances = [partition_importances[i] for i in range(num_partitions) if i not in remove_indices]
+
     more_important_features, less_important_features = \
         willump_dfs_find_efficient_features(partitioned_features,
                                             partition_costs=partition_times,
@@ -241,34 +249,10 @@ if __name__ == '__main__':
         fillna(full_feature_matrix_train.median())
     full_model = pcc_train_function(full_feature_matrix_train, train_y)
 
-    mi_t0 = time.time()
-    mi_feature_matrix_test = ft.calculate_feature_matrix(more_important_features,
-                                                         entityset=es,
-                                                         cutoff_time=cutoff_valid).drop(
-        columns=['days_to_churn', 'churn_date', "label"])
-    mi_feature_matrix_test = mi_feature_matrix_test.replace({np.inf: np.nan, -np.inf: np.nan}). \
-        fillna(mi_feature_matrix_test.median())
-    mi_preds = small_model.predict(mi_feature_matrix_test)
-    mi_time_elapsed = time.time() - mi_t0
-    mi_score = roc_auc_score(test_y, mi_preds)
+    print("# Features filtered: %d" % (
+            len(feature_defs) - len(more_important_features) - len(less_important_features)))
 
-    full_t0 = time.time()
-    full_feature_matrix_test = ft.calculate_feature_matrix(more_important_features + less_important_features,
-                                                           entityset=es,
-                                                           cutoff_time=cutoff_valid).drop(
-        columns=['days_to_churn', 'churn_date', "label"])
-    full_feature_matrix_test = full_feature_matrix_test.replace({np.inf: np.nan, -np.inf: np.nan}). \
-        fillna(full_feature_matrix_test.median())
-    full_preds = full_model.predict(full_feature_matrix_test)
-    full_time_elapsed = time.time() - full_t0
-    full_score = roc_auc_score(test_y, full_preds)
-
-    print("More important features time: %f  Full feature time: %f" %
-          (mi_time_elapsed, full_time_elapsed))
-    print("More important features AUC: %f  Full features AUC: %f" %
-          (mi_score, full_score))
-
-    ft.save_features(more_important_features + less_important_features, resources_folder + "top_features.dfs")
+    ft.save_features(less_important_features, resources_folder + "li_features.dfs")
     ft.save_features(more_important_features, resources_folder + "mi_features.dfs")
     pickle.dump(small_model, open(resources_folder + "small_model.pk", "wb"))
     pickle.dump(full_model, open(resources_folder + "full_model.pk", "wb"))

@@ -57,7 +57,6 @@ if __name__ == '__main__':
     y_test = label_times_test.pop("label")
 
     # Train model with top features.
-    print("# Initial features found: %d" % len(features_encoded))
     top_feature_matrix_train = ft.calculate_feature_matrix(features_encoded,
                                                            entityset=es,
                                                            cutoff_time=label_times_train)
@@ -77,9 +76,6 @@ if __name__ == '__main__':
         willump_dfs_find_efficient_features(partitioned_features,
                                             partition_costs=partition_times,
                                             partition_importances=partition_importances)
-
-    print("# Features filtered: %d" % (
-                len(features_encoded) - len(more_important_features) - len(less_important_features)))
 
     for i, (features, cost, importance) in enumerate(zip(partitioned_features, partition_times, partition_importances)):
         print("%d Features: %s\nCost: %f  Importance: %f  Efficient: %r" % (i, features, cost, importance, all(
