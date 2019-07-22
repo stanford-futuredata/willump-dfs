@@ -46,9 +46,8 @@ if __name__ == '__main__':
     X = X.fillna(0)
     y = X.pop("label")
 
-    clf = utils.pnp_train_function(X, y)
-    top_features = utils.feature_importances(clf, features_encoded, n=20)
-    # top_features = ft.load_features(resources_folder + "top_features.dfs")
+    # clf = utils.pnp_train_function(X, y)
+    # features_encoded = utils.feature_importances(clf, features_encoded, n=20)
 
     label_times_train, label_times_test = train_test_split(label_times, test_size=0.2, random_state=42)
     label_times_train = label_times_train.sort_values(by=["user_id"])
@@ -57,25 +56,38 @@ if __name__ == '__main__':
     y_test = label_times_test.pop("label")
 
     # Train model with top features.
-    top_feature_matrix_train = ft.calculate_feature_matrix(top_features,
+    print("# Initial features found: %d" % len(features_encoded))
+    top_feature_matrix_train = ft.calculate_feature_matrix(features_encoded,
                                                            entityset=es,
                                                            cutoff_time=label_times_train)
     top_feature_matrix_train = top_feature_matrix_train.fillna(0)
 
-    partitioned_features = willump_dfs_partition_features(top_features)
+    partitioned_features = willump_dfs_partition_features(features_encoded)
 
     partition_times = willump_dfs_time_partitioned_features(partitioned_features, es, label_times)
     partition_importances = \
-        willump_dfs_mean_decrease_accuracy(top_features, partitioned_features,
+        willump_dfs_mean_decrease_accuracy(features_encoded, partitioned_features,
                                            top_feature_matrix_train.values, y_train.values,
                                            train_function=utils.pnp_train_function,
                                            predict_function=utils.pnp_predict_function,
                                            scoring_function=roc_auc_score)
 
+    num_partitions = len(partitioned_features)
+    remove_indices = []
+    for i, (feature, cost, importance) in enumerate(zip(partitioned_features, partition_times, partition_importances)):
+        if importance <= 0:
+            remove_indices.append(i)
+    partitioned_features = [partitioned_features[i] for i in range(num_partitions) if i not in remove_indices]
+    partition_times = [partition_times[i] for i in range(num_partitions) if i not in remove_indices]
+    partition_importances = [partition_importances[i] for i in range(num_partitions) if i not in remove_indices]
+
     more_important_features, less_important_features = \
         willump_dfs_find_efficient_features(partitioned_features,
                                             partition_costs=partition_times,
                                             partition_importances=partition_importances)
+
+    print("# Features filtered: %d" % (
+                len(features_encoded) - len(more_important_features) - len(less_important_features)))
 
     for i, (features, cost, importance) in enumerate(zip(partitioned_features, partition_times, partition_importances)):
         print("%d Features: %s\nCost: %f  Importance: %f  Efficient: %r" % (i, features, cost, importance, all(
@@ -88,39 +100,8 @@ if __name__ == '__main__':
                                                        y_train=y_train,
                                                        train_function=utils.pnp_train_function)
 
-    mi_t0 = time.time()
-    mi_feature_matrix_test = ft.calculate_feature_matrix(more_important_features,
-                                                         entityset=es,
-                                                         cutoff_time=label_times_test)
-    mi_feature_matrix_test = mi_feature_matrix_test.fillna(0)
-    mi_preds = small_model.predict(mi_feature_matrix_test)
-    mi_time_elapsed = time.time() - mi_t0
-    mi_score = roc_auc_score(y_test, mi_preds)
-
-    full_t0 = time.time()
-    full_feature_matrix_test = ft.calculate_feature_matrix(more_important_features + less_important_features,
-                                                           entityset=es,
-                                                           cutoff_time=label_times_test)
-    full_feature_matrix_test = full_feature_matrix_test.fillna(0)
-    full_preds = full_model.predict(full_feature_matrix_test)
-    full_time_elapsed = time.time() - full_t0
-    full_score = roc_auc_score(y_test, full_preds)
-
-    cascade_t0 = time.time()
-    cascade_preds = willump_dfs_cascade(more_important_features=more_important_features,
-                                        less_important_features=less_important_features,
-                                        entity_set=es, cutoff_times=label_times_test, small_model=small_model,
-                                        full_model=full_model, confidence_threshold=0.6)
-    cascade_time_elapsed = time.time() - cascade_t0
-    cascade_score = roc_auc_score(y_test, cascade_preds)
-
-    print("More important features time: %f  Full feature time: %f  Cascade time: %f" %
-          (mi_time_elapsed, full_time_elapsed, cascade_time_elapsed))
-    print("More important features AUC: %f  Full features AUC: %f  Cascade AUC: %f" %
-          (mi_score, full_score, cascade_score))
-
     # Save top features.
-    ft.save_features(more_important_features + less_important_features, resources_folder + "top_features.dfs")
+    ft.save_features(less_important_features, resources_folder + "li_features.dfs")
     pickle.dump(full_model, open(resources_folder + "full_model.pk", "wb"))
     ft.save_features(more_important_features, resources_folder + "mi_features.dfs")
     pickle.dump(small_model, open(resources_folder + "small_model.pk", "wb"))
