@@ -15,6 +15,7 @@ resources_folder = "tests/test_resources/predict_next_purchase_resources/"
 
 data_small = "data_small"
 data_large = "data_large"
+data_full = "data_huge"
 
 data_folder = data_large
 
@@ -46,8 +47,8 @@ if __name__ == '__main__':
     X = X.fillna(0)
     y = X.pop("label")
 
-    # clf = utils.pnp_train_function(X, y)
-    # features_encoded = utils.feature_importances(clf, features_encoded, n=20)
+    clf = utils.pnp_train_function(X, y)
+    features_encoded = utils.feature_importances(clf, features_encoded, n=20)
 
     label_times_train, label_times_test = train_test_split(label_times, test_size=0.2, random_state=42)
     label_times_train = label_times_train.sort_values(by=["user_id"])
@@ -71,15 +72,6 @@ if __name__ == '__main__':
                                            train_function=utils.pnp_train_function,
                                            predict_function=utils.pnp_predict_function,
                                            scoring_function=roc_auc_score)
-
-    num_partitions = len(partitioned_features)
-    remove_indices = []
-    for i, (feature, cost, importance) in enumerate(zip(partitioned_features, partition_times, partition_importances)):
-        if importance <= 0:
-            remove_indices.append(i)
-    partitioned_features = [partitioned_features[i] for i in range(num_partitions) if i not in remove_indices]
-    partition_times = [partition_times[i] for i in range(num_partitions) if i not in remove_indices]
-    partition_importances = [partition_importances[i] for i in range(num_partitions) if i not in remove_indices]
 
     more_important_features, less_important_features = \
         willump_dfs_find_efficient_features(partitioned_features,

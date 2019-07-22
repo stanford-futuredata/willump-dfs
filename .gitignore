@@ -5,6 +5,7 @@
 *entity_set/
 tests/test_resources/predict_taxi_duration/train.csv
 tests/test_resources/predict_customer_churn/
+*data_huge/
 
 # Byte-compiled / optimized / DLL files
 __pycache__/

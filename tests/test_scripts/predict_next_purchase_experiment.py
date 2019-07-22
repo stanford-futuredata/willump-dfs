@@ -11,6 +11,7 @@ resources_folder = "tests/test_resources/predict_next_purchase_resources/"
 
 data_small = "data_small"
 data_large = "data_large"
+data_full = "data_huge"
 
 data_folder = data_large
 
