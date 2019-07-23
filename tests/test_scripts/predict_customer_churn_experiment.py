@@ -1,10 +1,11 @@
+import argparse
 import pickle
 
+import pandas as pd
 from featuretools.primitives import make_agg_primitive
-from predict_customer_churn_train import partition_to_entity_set, total_previous_month
 from sklearn.metrics import roc_auc_score
-import argparse
 
+from predict_customer_churn_train import partition_to_entity_set, total_previous_month
 from willump_dfs.evaluation.willump_dfs_graph_builder import *
 
 resources_folder = "tests/test_resources/predict_customer_churn/"
@@ -36,22 +37,24 @@ if __name__ == '__main__':
     split_date = pd.datetime(2016, 8, 1)
     cutoff_valid = cutoff_times.loc[cutoff_times['cutoff_time'] >= split_date].copy().drop(
         columns=['days_to_churn', 'churn_date'])
-    y_test = cutoff_valid.pop("label")
+    test_y = ft.calculate_feature_matrix([more_important_features[0]],
+                                         entityset=es, cutoff_time=cutoff_valid).pop("label")
+    cutoff_valid.pop("label")
 
     if cascade_threshold is None:
         print("Without Cascades")
         # Evaluate model.
-        t0 = time.time()
-        full_feature_matrix_test = ft.calculate_feature_matrix(more_important_features + less_important_features,
-                                                               entityset=es,
-                                                               cutoff_time=cutoff_valid)
-        full_feature_matrix_test = full_feature_matrix_test.replace({np.inf: np.nan, -np.inf: np.nan}). \
-            fillna(full_feature_matrix_test.median())
-        mi_preds = full_model.predict(full_feature_matrix_test)
-        time_elapsed = time.time() - t0
-        score = roc_auc_score(y_test, mi_preds)
+        mi_t0 = time.time()
+        full_feature_matrix = ft.calculate_feature_matrix(more_important_features + less_important_features,
+                                                          entityset=es,
+                                                          cutoff_time=cutoff_valid)
+        mi_feature_matrix_test = full_feature_matrix.replace({np.inf: np.nan, -np.inf: np.nan}). \
+            fillna(full_feature_matrix.median())
+        mi_preds = full_model.predict(mi_feature_matrix_test)
+        time_elapsed = time.time() - mi_t0
+        score = roc_auc_score(test_y, mi_preds)
     else:
-        assert(0.5 <= cascade_threshold <= 1.0)
+        assert (0.5 <= cascade_threshold <= 1.0)
         print("Cascade Threshold %f" % cascade_threshold)
         t0 = time.time()
         cascade_preds = willump_dfs_cascade(more_important_features=more_important_features,
@@ -59,6 +62,6 @@ if __name__ == '__main__':
                                             entity_set=es, cutoff_times=cutoff_valid, small_model=small_model,
                                             full_model=full_model, confidence_threshold=cascade_threshold)
         time_elapsed = time.time() - t0
-        score = roc_auc_score(y_test, cascade_preds)
+        score = roc_auc_score(test_y, cascade_preds)
 
     print("Time: %f sec AUC: %f  Throughput: %f rows/sec" % (time_elapsed, score, len(cutoff_valid) / time_elapsed))

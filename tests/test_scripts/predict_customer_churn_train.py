@@ -1,13 +1,16 @@
 import os
-import pickle
 
+import featuretools as ft
 import featuretools.variable_types as vtypes
+import numpy as np
+import pandas as pd
 from featuretools.primitives import make_agg_primitive
 from sklearn.ensemble import RandomForestClassifier
 from sklearn.metrics import roc_auc_score
+import pickle
 
-from willump_dfs.evaluation.willump_dfs_graph_builder import *
 from willump_dfs.evaluation.willump_dfs_utils import feature_in_list
+from willump_dfs.evaluation.willump_dfs_graph_builder import *
 
 N_PARTITIONS = 1000
 
@@ -21,7 +24,7 @@ def pcc_train_function(X, y):
     model = RandomForestClassifier(n_estimators=100, max_depth=40,
                                    min_samples_leaf=50,
                                    n_jobs=1, class_weight='balanced',
-                                   random_state=42)
+                                   random_state=50)
     model.fit(X, y)
     return model
 
@@ -124,97 +127,92 @@ def total_previous_month(numeric, datetime, time):
     return total
 
 
+total_previous = make_agg_primitive(total_previous_month, input_types=[ft.variable_types.Numeric,
+                                                                       ft.variable_types.Datetime],
+                                    return_type=ft.variable_types.Numeric,
+                                    uses_calc_time=True)
+
+agg_primitives = ['sum', 'time_since_last', 'avg_time_between', 'all', 'mode', 'num_unique', 'min', 'last',
+                  'mean', 'percent_true', 'max', 'std', 'count', total_previous]
+trans_primitives = ['is_weekend', 'cum_sum', 'day', 'month', 'diff', 'time_since_previous']
+where_primitives = ['sum', 'mean', 'percent_true', 'all', 'any']
+
+if not os.path.exists(resources_folder + "features.dfs"):
+    feature_matrix, feature_defs = ft.dfs(entityset=es, target_entity='members',
+                                          cutoff_time=cutoff_times,
+                                          agg_primitives=agg_primitives,
+                                          trans_primitives=trans_primitives,
+                                          where_primitives=where_primitives,
+                                          max_depth=1, features_only=False,
+                                          verbose=1,
+                                          n_jobs=1,
+                                          cutoff_time_in_index=False)
+    # encode categorical values
+    feature_matrix, feature_defs = ft.encode_features(feature_matrix,
+                                                      feature_defs)
+
+    # Drop columns with missing values
+    missing_pct = feature_matrix.isnull().sum() / len(feature_matrix)
+    to_drop = list((missing_pct[missing_pct > 0.9]).index)
+    to_drop = [x for x in to_drop if x != 'days_to_churn']
+
+    # Drop highly correlated columns
+    threshold = 0.95
+
+    # Calculate correlations
+    corr_matrix = feature_matrix.corr().abs()
+
+    # Subset to the upper triangle of correlation matrix
+    upper = corr_matrix.where(
+        np.triu(np.ones(corr_matrix.shape), k=1).astype(np.bool))
+
+    # Identify names of columns with correlation above threshold
+    to_drop = to_drop + [column for column in upper.columns if any(
+        upper[column] >= threshold)]
+
+    to_drop_index = list(map(lambda x: list(feature_matrix.columns).index(x), to_drop))
+    feature_defs = [feature_defs[i] for i in range(len(feature_defs)) if i not in to_drop_index]
+    ft.save_features(feature_defs, resources_folder + "features.dfs")
+
 if __name__ == '__main__':
 
     es, cutoff_times = partition_to_entity_set(0)
 
-    total_previous = make_agg_primitive(total_previous_month, input_types=[ft.variable_types.Numeric,
-                                                                           ft.variable_types.Datetime],
-                                        return_type=ft.variable_types.Numeric,
-                                        uses_calc_time=True)
-
-    agg_primitives = ['sum', 'time_since_last', 'avg_time_between', 'all', 'mode', 'num_unique', 'min', 'last',
-                      'mean', 'percent_true', 'max', 'std', 'count', total_previous]
-    trans_primitives = ['is_weekend', 'cum_sum', 'day', 'month', 'diff', 'time_since_previous']
-    where_primitives = ['sum', 'mean', 'percent_true', 'all', 'any']
-
     if debug:
         cutoff_times = cutoff_times[:1000]
 
-    if not os.path.exists(resources_folder + "features.dfs"):
-        feature_matrix, feature_defs = ft.dfs(entityset=es, target_entity='members',
-                                              cutoff_time=cutoff_times,
-                                              agg_primitives=agg_primitives,
-                                              trans_primitives=trans_primitives,
-                                              where_primitives=where_primitives,
-                                              max_depth=1, features_only=False,
-                                              verbose=1,
-                                              n_jobs=1,
-                                              cutoff_time_in_index=False)
-        # encode categorical values
-        feature_matrix, feature_defs = ft.encode_features(feature_matrix,
-                                                          feature_defs)
-
-        # Drop columns with missing values
-        missing_pct = feature_matrix.isnull().sum() / len(feature_matrix)
-        to_drop = list((missing_pct[missing_pct > 0.9]).index)
-        to_drop = [x for x in to_drop if x != 'days_to_churn']
-
-        # Drop highly correlated columns
-        threshold = 0.95
-
-        # Calculate correlations
-        corr_matrix = feature_matrix.corr().abs()
-
-        # Subset to the upper triangle of correlation matrix
-        upper = corr_matrix.where(
-            np.triu(np.ones(corr_matrix.shape), k=1).astype(np.bool))
-
-        # Identify names of columns with correlation above threshold
-        to_drop = to_drop + [column for column in upper.columns if any(
-            upper[column] >= threshold)]
-
-        to_drop_index = list(map(lambda x: list(feature_matrix.columns).index(x), to_drop))
-        feature_defs = [feature_defs[i] for i in range(len(feature_defs)) if i not in to_drop_index]
-        ft.save_features(feature_defs, resources_folder + "features.dfs")
-
     feature_defs = ft.load_features(resources_folder + "features.dfs")
 
-    print("# Initial features found: %d" % len(feature_defs))
-
     split_date = pd.datetime(2016, 8, 1)
-    cutoff_train = cutoff_times.loc[cutoff_times['cutoff_time'] < split_date].copy().drop(
-        columns=['days_to_churn', 'churn_date'])
+    cutoff_train = cutoff_times.loc[cutoff_times['cutoff_time'] < split_date].copy()
     cutoff_valid = cutoff_times.loc[cutoff_times['cutoff_time'] >= split_date].copy()
-    y_train = cutoff_train.pop("label").values
     print("%d train rows, %d test rows" % (len(cutoff_train), len(cutoff_valid)))
-    del cutoff_valid
 
     feature_matrix_train = ft.calculate_feature_matrix(feature_defs,
                                                        entityset=es,
                                                        cutoff_time=cutoff_train,
-                                                       verbose=True)
+                                                       verbose=True).drop(columns=['days_to_churn', 'churn_date'])
     feature_matrix_train = feature_matrix_train.replace({np.inf: np.nan, -np.inf: np.nan}). \
         fillna(feature_matrix_train.median())
 
+    feature_matrix_valid = ft.calculate_feature_matrix(feature_defs,
+                                                       entityset=es,
+                                                       cutoff_time=cutoff_valid,
+                                                       verbose=True).drop(columns=['days_to_churn', 'churn_date'])
+    feature_matrix_valid = feature_matrix_valid.replace({np.inf: np.nan, -np.inf: np.nan}). \
+        fillna(feature_matrix_valid.median())
+
+    train_y, test_y = np.array(feature_matrix_train.pop('label')), np.array(feature_matrix_valid.pop('label'))
+
     partitioned_features = willump_dfs_partition_features(feature_defs)
 
+    partition_times = willump_dfs_time_partitioned_features(partitioned_features, es, cutoff_train)
     partition_importances = \
         willump_dfs_mean_decrease_accuracy(feature_defs, partitioned_features,
-                                           feature_matrix_train.values, y_train,
+                                           feature_matrix_train.values, train_y,
                                            train_function=pcc_train_function,
                                            predict_function=pcc_eval_function,
                                            scoring_function=roc_auc_score)
-    partition_times = willump_dfs_time_partitioned_features(partitioned_features, es, cutoff_train)
-
-    num_partitions = len(partitioned_features)
-    remove_indices = []
-    for i, (feature, cost, importance) in enumerate(zip(partitioned_features, partition_times, partition_importances)):
-        if importance <= 0:
-            remove_indices.append(i)
-    partitioned_features = [partitioned_features[i] for i in range(num_partitions) if i not in remove_indices]
-    partition_times = [partition_times[i] for i in range(num_partitions) if i not in remove_indices]
-    partition_importances = [partition_importances[i] for i in range(num_partitions) if i not in remove_indices]
 
     more_important_features, less_important_features = \
         willump_dfs_find_efficient_features(partitioned_features,
@@ -225,15 +223,50 @@ if __name__ == '__main__':
         print("%d Features: %s\nCost: %f  Importance: %f  Efficient: %r" % (i, features, cost, importance, all(
             feature_in_list(feature, more_important_features) for feature in features)))
 
-    small_model, full_model = willump_dfs_train_models(more_important_features=more_important_features,
-                                                       less_important_features=less_important_features,
-                                                       entity_set=es,
-                                                       training_times=cutoff_train,
-                                                       y_train=y_train,
-                                                       train_function=pcc_train_function)
+    mi_feature_matrix_train = ft.calculate_feature_matrix(more_important_features,
+                                                          entityset=es,
+                                                          cutoff_time=cutoff_train,
+                                                          verbose=True).drop(
+        columns=['days_to_churn', 'churn_date', 'label'])
+    mi_feature_matrix_train = mi_feature_matrix_train.replace({np.inf: np.nan, -np.inf: np.nan}). \
+        fillna(mi_feature_matrix_train.median())
+    small_model = pcc_train_function(mi_feature_matrix_train, train_y)
 
-    print("# Features filtered: %d" % (
-            len(feature_defs) - len(more_important_features) - len(less_important_features)))
+    full_feature_matrix_train = ft.calculate_feature_matrix(more_important_features + less_important_features,
+                                                            entityset=es,
+                                                            cutoff_time=cutoff_train,
+                                                            verbose=True).drop(
+        columns=['days_to_churn', 'churn_date', 'label'])
+    full_feature_matrix_train = full_feature_matrix_train.replace({np.inf: np.nan, -np.inf: np.nan}). \
+        fillna(full_feature_matrix_train.median())
+    full_model = pcc_train_function(full_feature_matrix_train, train_y)
+
+    mi_t0 = time.time()
+    mi_feature_matrix_test = ft.calculate_feature_matrix(more_important_features,
+                                                         entityset=es,
+                                                         cutoff_time=cutoff_valid).drop(
+        columns=['days_to_churn', 'churn_date', "label"])
+    mi_feature_matrix_test = mi_feature_matrix_test.replace({np.inf: np.nan, -np.inf: np.nan}). \
+        fillna(mi_feature_matrix_test.median())
+    mi_preds = small_model.predict(mi_feature_matrix_test)
+    mi_time_elapsed = time.time() - mi_t0
+    mi_score = roc_auc_score(test_y, mi_preds)
+
+    full_t0 = time.time()
+    full_feature_matrix_test = ft.calculate_feature_matrix(more_important_features + less_important_features,
+                                                           entityset=es,
+                                                           cutoff_time=cutoff_valid).drop(
+        columns=['days_to_churn', 'churn_date', "label"])
+    full_feature_matrix_test = full_feature_matrix_test.replace({np.inf: np.nan, -np.inf: np.nan}). \
+        fillna(full_feature_matrix_test.median())
+    full_preds = full_model.predict(full_feature_matrix_test)
+    full_time_elapsed = time.time() - full_t0
+    full_score = roc_auc_score(test_y, full_preds)
+
+    print("More important features time: %f  Full feature time: %f" %
+          (mi_time_elapsed, full_time_elapsed))
+    print("More important features AUC: %f  Full features AUC: %f" %
+          (mi_score, full_score))
 
     ft.save_features(less_important_features, resources_folder + "li_features.dfs")
     ft.save_features(more_important_features, resources_folder + "mi_features.dfs")
