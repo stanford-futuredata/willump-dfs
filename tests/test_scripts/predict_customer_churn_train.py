@@ -14,14 +14,14 @@ N_PARTITIONS = 1000
 resources_folder = "tests/test_resources/predict_customer_churn/"
 partitions_dir = resources_folder + 'partitions/'
 
-debug = True
+debug = False
 
 
 def pcc_train_function(X, y):
     model = RandomForestClassifier(n_estimators=100, max_depth=40,
                                    min_samples_leaf=50,
                                    n_jobs=1, class_weight='balanced',
-                                   random_state=50)
+                                   random_state=42)
     model.fit(X, y)
     return model
 
@@ -183,35 +183,29 @@ if __name__ == '__main__':
     print("# Initial features found: %d" % len(feature_defs))
 
     split_date = pd.datetime(2016, 8, 1)
-    cutoff_train = cutoff_times.loc[cutoff_times['cutoff_time'] < split_date].copy()
+    cutoff_train = cutoff_times.loc[cutoff_times['cutoff_time'] < split_date].copy().drop(
+        columns=['days_to_churn', 'churn_date'])
     cutoff_valid = cutoff_times.loc[cutoff_times['cutoff_time'] >= split_date].copy()
+    y_train = cutoff_train.pop("label").values
     print("%d train rows, %d test rows" % (len(cutoff_train), len(cutoff_valid)))
+    del cutoff_valid
 
     feature_matrix_train = ft.calculate_feature_matrix(feature_defs,
                                                        entityset=es,
                                                        cutoff_time=cutoff_train,
-                                                       verbose=True).drop(columns=['days_to_churn', 'churn_date'])
+                                                       verbose=True)
     feature_matrix_train = feature_matrix_train.replace({np.inf: np.nan, -np.inf: np.nan}). \
         fillna(feature_matrix_train.median())
 
-    feature_matrix_valid = ft.calculate_feature_matrix(feature_defs,
-                                                       entityset=es,
-                                                       cutoff_time=cutoff_valid,
-                                                       verbose=True).drop(columns=['days_to_churn', 'churn_date'])
-    feature_matrix_valid = feature_matrix_valid.replace({np.inf: np.nan, -np.inf: np.nan}). \
-        fillna(feature_matrix_valid.median())
-
-    train_y, test_y = np.array(feature_matrix_train.pop('label')), np.array(feature_matrix_valid.pop('label'))
-
     partitioned_features = willump_dfs_partition_features(feature_defs)
 
-    partition_times = willump_dfs_time_partitioned_features(partitioned_features, es, cutoff_train)
     partition_importances = \
         willump_dfs_mean_decrease_accuracy(feature_defs, partitioned_features,
-                                           feature_matrix_train.values, train_y,
+                                           feature_matrix_train.values, y_train,
                                            train_function=pcc_train_function,
                                            predict_function=pcc_eval_function,
                                            scoring_function=roc_auc_score)
+    partition_times = willump_dfs_time_partitioned_features(partitioned_features, es, cutoff_train)
 
     num_partitions = len(partitioned_features)
     remove_indices = []
@@ -231,23 +225,12 @@ if __name__ == '__main__':
         print("%d Features: %s\nCost: %f  Importance: %f  Efficient: %r" % (i, features, cost, importance, all(
             feature_in_list(feature, more_important_features) for feature in features)))
 
-    mi_feature_matrix_train = ft.calculate_feature_matrix(more_important_features,
-                                                          entityset=es,
-                                                          cutoff_time=cutoff_train,
-                                                          verbose=True).drop(
-        columns=['days_to_churn', 'churn_date', 'label'])
-    mi_feature_matrix_train = mi_feature_matrix_train.replace({np.inf: np.nan, -np.inf: np.nan}). \
-        fillna(mi_feature_matrix_train.median())
-    small_model = pcc_train_function(mi_feature_matrix_train, train_y)
-
-    full_feature_matrix_train = ft.calculate_feature_matrix(more_important_features + less_important_features,
-                                                            entityset=es,
-                                                            cutoff_time=cutoff_train,
-                                                            verbose=True).drop(
-        columns=['days_to_churn', 'churn_date', 'label'])
-    full_feature_matrix_train = full_feature_matrix_train.replace({np.inf: np.nan, -np.inf: np.nan}). \
-        fillna(full_feature_matrix_train.median())
-    full_model = pcc_train_function(full_feature_matrix_train, train_y)
+    small_model, full_model = willump_dfs_train_models(more_important_features=more_important_features,
+                                                       less_important_features=less_important_features,
+                                                       entity_set=es,
+                                                       training_times=cutoff_train,
+                                                       y_train=y_train,
+                                                       train_function=pcc_train_function)
 
     print("# Features filtered: %d" % (
             len(feature_defs) - len(more_important_features) - len(less_important_features)))

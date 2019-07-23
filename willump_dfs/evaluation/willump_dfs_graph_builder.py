@@ -3,7 +3,6 @@ from typing import List, Tuple
 
 import featuretools as ft
 import numpy as np
-import pandas as pd
 from featuretools.feature_base.feature_base import FeatureBase
 from sklearn.model_selection import ShuffleSplit
 
@@ -89,13 +88,15 @@ def willump_dfs_train_models(more_important_features: List[FeatureBase], less_im
                                                     entityset=entity_set,
                                                     cutoff_time=training_times,
                                                     approximate=approximate)
-    mi_feature_matrix = mi_feature_matrix.fillna(0)
+    mi_feature_matrix = mi_feature_matrix.replace({np.inf: np.nan, -np.inf: np.nan}). \
+        fillna(mi_feature_matrix.median())
     small_model = train_function(mi_feature_matrix, y_train)
     full_feature_matrix = ft.calculate_feature_matrix(full_features,
                                                       entityset=entity_set,
                                                       cutoff_time=training_times,
                                                       approximate=approximate)
-    full_feature_matrix = full_feature_matrix.fillna(0)
+    full_feature_matrix = full_feature_matrix.replace({np.inf: np.nan, -np.inf: np.nan}). \
+        fillna(full_feature_matrix.median())
     full_model = train_function(full_feature_matrix, y_train)
     return small_model, full_model
 
@@ -105,7 +106,8 @@ def willump_dfs_cascade(more_important_features: List[FeatureBase], less_importa
     mi_feature_matrix = ft.calculate_feature_matrix(more_important_features,
                                                     entityset=entity_set,
                                                     cutoff_time=cutoff_times)
-    mi_feature_matrix = mi_feature_matrix.fillna(0)
+    mi_feature_matrix = mi_feature_matrix.replace({np.inf: np.nan, -np.inf: np.nan}). \
+        fillna(mi_feature_matrix.median())
     small_model_probs = small_model.predict_proba(mi_feature_matrix)
     small_model_preds = small_model.classes_.take(np.argmax(small_model_probs, axis=1), axis=0)
     combined_preds = small_model_preds
@@ -117,8 +119,9 @@ def willump_dfs_cascade(more_important_features: List[FeatureBase], less_importa
         li_feature_matrix = ft.calculate_feature_matrix(less_important_features,
                                                         entityset=entity_set,
                                                         cutoff_time=cascaded_times)
-        li_feature_matrix = li_feature_matrix.fillna(0)
-        full_feature_matrix = pd.concat([cascaded_mi_matrix, li_feature_matrix], axis=1)
+        li_feature_matrix = li_feature_matrix.replace({np.inf: np.nan, -np.inf: np.nan}). \
+            fillna(li_feature_matrix.median())
+        full_feature_matrix = np.hstack((cascaded_mi_matrix, li_feature_matrix))
         full_model_preds = full_model.predict(full_feature_matrix)
         f_index = 0
         for i in range(len(combined_preds)):
@@ -135,7 +138,9 @@ def willump_dfs_mean_decrease_accuracy(features: List[FeatureBase],
     Calculate mean decrease accuracy for every partition.  This is the decrease in OOB accuracy when all features
     in the partition are shuffled.
     """
-    partition_indices = list(map(lambda partition: list(map(lambda feature: index_feature_in_list(feature, features), partition)), partitioned_features))
+    partition_indices = list(
+        map(lambda partition: list(map(lambda feature: index_feature_in_list(feature, features), partition)),
+            partitioned_features))
     scores = [[] for _ in range(len(partition_indices))]
     rs = ShuffleSplit(n_splits=3, test_size=0.2, random_state=42)
     for train_index, test_index in rs.split(X):
