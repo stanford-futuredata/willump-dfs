@@ -37,17 +37,18 @@ if __name__ == '__main__':
     split_date = pd.datetime(2016, 8, 1)
     cutoff_valid = cutoff_times.loc[cutoff_times['cutoff_time'] >= split_date].copy().drop(
         columns=['days_to_churn', 'churn_date'])
-    test_y = ft.calculate_feature_matrix([more_important_features[0]],
-                                         entityset=es, cutoff_time=cutoff_valid).pop("label")
-    cutoff_valid.pop("label")
+    test_y = cutoff_valid.pop("label")
 
     if cascade_threshold is None:
         print("Without Cascades")
         # Evaluate model.
+        sort_col = "pcc_sort_col"
+        cutoff_valid[sort_col] = range(len(cutoff_valid))
         mi_t0 = time.time()
         full_feature_matrix = ft.calculate_feature_matrix(more_important_features + less_important_features,
                                                           entityset=es,
-                                                          cutoff_time=cutoff_valid)
+                                                          cutoff_time=cutoff_valid).sort_values(sort_col).drop(sort_col,
+                                                                                                               axis=1)
         mi_feature_matrix_test = full_feature_matrix.replace({np.inf: np.nan, -np.inf: np.nan}). \
             fillna(full_feature_matrix.median())
         mi_preds = full_model.predict(mi_feature_matrix_test)

@@ -103,9 +103,11 @@ def willump_dfs_train_models(more_important_features: List[FeatureBase], less_im
 
 def willump_dfs_cascade(more_important_features: List[FeatureBase], less_important_features: List[FeatureBase],
                         entity_set, cutoff_times, small_model, full_model, confidence_threshold):
+    sort_col = "__willump_sort_col"
+    cutoff_times[sort_col] = range(len(cutoff_times))
     mi_feature_matrix = ft.calculate_feature_matrix(more_important_features,
                                                     entityset=entity_set,
-                                                    cutoff_time=cutoff_times)
+                                                    cutoff_time=cutoff_times).sort_values(by=sort_col).drop(sort_col, axis=1)
     mi_feature_matrix = mi_feature_matrix.replace({np.inf: np.nan, -np.inf: np.nan}). \
         fillna(mi_feature_matrix.median())
     small_model_probs = small_model.predict_proba(mi_feature_matrix)
@@ -118,7 +120,7 @@ def willump_dfs_cascade(more_important_features: List[FeatureBase], less_importa
     if len(cascaded_times) > 0:
         li_feature_matrix = ft.calculate_feature_matrix(less_important_features,
                                                         entityset=entity_set,
-                                                        cutoff_time=cascaded_times)
+                                                        cutoff_time=cascaded_times).sort_values(by=sort_col).drop(sort_col, axis=1)
         li_feature_matrix = li_feature_matrix.replace({np.inf: np.nan, -np.inf: np.nan}). \
             fillna(li_feature_matrix.median())
         full_feature_matrix = np.hstack((cascaded_mi_matrix, li_feature_matrix))

@@ -241,33 +241,6 @@ if __name__ == '__main__':
         fillna(full_feature_matrix_train.median())
     full_model = pcc_train_function(full_feature_matrix_train, train_y)
 
-    mi_t0 = time.time()
-    mi_feature_matrix_test = ft.calculate_feature_matrix(more_important_features,
-                                                         entityset=es,
-                                                         cutoff_time=cutoff_valid).drop(
-        columns=['days_to_churn', 'churn_date', "label"])
-    mi_feature_matrix_test = mi_feature_matrix_test.replace({np.inf: np.nan, -np.inf: np.nan}). \
-        fillna(mi_feature_matrix_test.median())
-    mi_preds = small_model.predict(mi_feature_matrix_test)
-    mi_time_elapsed = time.time() - mi_t0
-    mi_score = roc_auc_score(test_y, mi_preds)
-
-    full_t0 = time.time()
-    full_feature_matrix_test = ft.calculate_feature_matrix(more_important_features + less_important_features,
-                                                           entityset=es,
-                                                           cutoff_time=cutoff_valid).drop(
-        columns=['days_to_churn', 'churn_date', "label"])
-    full_feature_matrix_test = full_feature_matrix_test.replace({np.inf: np.nan, -np.inf: np.nan}). \
-        fillna(full_feature_matrix_test.median())
-    full_preds = full_model.predict(full_feature_matrix_test)
-    full_time_elapsed = time.time() - full_t0
-    full_score = roc_auc_score(test_y, full_preds)
-
-    print("More important features time: %f  Full feature time: %f" %
-          (mi_time_elapsed, full_time_elapsed))
-    print("More important features AUC: %f  Full features AUC: %f" %
-          (mi_score, full_score))
-
     ft.save_features(less_important_features, resources_folder + "li_features.dfs")
     ft.save_features(more_important_features, resources_folder + "mi_features.dfs")
     pickle.dump(small_model, open(resources_folder + "small_model.pk", "wb"))
