@@ -5,6 +5,7 @@ from sklearn.model_selection import train_test_split
 
 import predict_next_purchase_utils as utils
 from willump_dfs.evaluation.willump_dfs_graph_builder import *
+import pandas as pd
 import argparse
 
 resources_folder = "tests/test_resources/predict_next_purchase_resources/"
@@ -13,14 +14,25 @@ data_small = "data_small"
 data_large = "data_large"
 data_full = "data_huge"
 
-data_folder = data_large
+data_folder = None
 
 if __name__ == '__main__':
 
     parser = argparse.ArgumentParser()
     parser.add_argument("-c", "--cascades", type=float, help="Cascade threshold")
+    parser.add_argument("-d", "--dataset", type=str, help="Cascade threshold")
     args = parser.parse_args()
     cascade_threshold = args.cascades
+    dataset = args.dataset
+    if dataset == "small":
+        data_folder = data_small
+    elif dataset == "large":
+        data_folder = data_large
+    elif dataset == "huge":
+        data_folder = data_full
+    else:
+        print("Invalid dataset")
+        exit(1)
 
     try:
         es = ft.read_entityset(resources_folder + data_folder + "_entity_set")
@@ -42,6 +54,7 @@ if __name__ == '__main__':
     _, label_times_test = train_test_split(label_times, test_size=0.2, random_state=42)
     label_times_test = label_times_test.sort_values(by=["user_id"])
     y_test = label_times_test.pop("label")
+    print("Test dataset length: %d" % len(label_times_test))
 
     if cascade_threshold is None:
         print("Without Cascades")

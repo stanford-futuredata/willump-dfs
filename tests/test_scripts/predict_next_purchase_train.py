@@ -1,15 +1,13 @@
+import argparse
 import pickle
-import time
 
-import featuretools as ft
 import pandas as pd
-from willump_dfs.evaluation.willump_dfs_utils import feature_in_list
-from sklearn.ensemble import RandomForestClassifier
-from sklearn.model_selection import cross_val_score, train_test_split
 from sklearn.metrics import roc_auc_score
-import predict_next_purchase_utils as utils
+from sklearn.model_selection import train_test_split
 
+import predict_next_purchase_utils as utils
 from willump_dfs.evaluation.willump_dfs_graph_builder import *
+from willump_dfs.evaluation.willump_dfs_utils import feature_in_list
 
 resources_folder = "tests/test_resources/predict_next_purchase_resources/"
 
@@ -17,9 +15,23 @@ data_small = "data_small"
 data_large = "data_large"
 data_full = "data_huge"
 
-data_folder = data_large
+data_folder = None
 
 if __name__ == '__main__':
+
+    parser = argparse.ArgumentParser()
+    parser.add_argument("-d", "--dataset", type=str, help="Cascade threshold")
+    args = parser.parse_args()
+    dataset = args.dataset
+    if dataset == "small":
+        data_folder = data_small
+    elif dataset == "large":
+        data_folder = data_large
+    elif dataset == "huge":
+        data_folder = data_full
+    else:
+        print("Invalid dataset")
+        exit(1)
 
     try:
         es = ft.read_entityset(resources_folder + data_folder + "_entity_set")
