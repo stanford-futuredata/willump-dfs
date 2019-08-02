@@ -1,23 +1,18 @@
+import argparse
 import os
+import pickle
 
-import featuretools as ft
 import featuretools.variable_types as vtypes
-import numpy as np
 import pandas as pd
 from featuretools.primitives import make_agg_primitive
 from sklearn.ensemble import RandomForestClassifier
 from sklearn.metrics import roc_auc_score
-import pickle
 
-from willump_dfs.evaluation.willump_dfs_utils import feature_in_list
 from willump_dfs.evaluation.willump_dfs_graph_builder import *
-
-N_PARTITIONS = 1000
+from willump_dfs.evaluation.willump_dfs_utils import feature_in_list
 
 resources_folder = "tests/test_resources/predict_customer_churn/"
 partitions_dir = resources_folder + 'partitions/'
-
-debug = False
 
 
 def pcc_train_function(X, y):
@@ -33,7 +28,7 @@ def pcc_eval_function(model, X_valid):
     return model.predict(X_valid)
 
 
-def partition_to_entity_set(partition, cutoff_time_name='MS-31_labels.csv'):
+def partition_to_entity_set(partition_end, cutoff_time_name='MS-31_labels.csv'):
     """Take in a partition number, create a feature matrix, and save to Amazon S3
 
     Params
@@ -48,22 +43,32 @@ def partition_to_entity_set(partition, cutoff_time_name='MS-31_labels.csv'):
         None: saves the feature matrix to Amazon S3
 
     """
+    members, trans, logs, cutoff_times = None, None, None, None
+    for partition in range(partition_end):
+        partition_dir = partitions_dir + 'p' + str(partition)
 
-    partition_dir = partitions_dir + 'p' + str(partition)
+        # Read in the data files
+        new_members = pd.read_csv(f'{partition_dir}/members.csv',
+                                  parse_dates=['registration_init_time'],
+                                  infer_datetime_format=True,
+                                  dtype={'gender': 'category'})
 
-    # Read in the data files
-    members = pd.read_csv(f'{partition_dir}/members.csv',
-                          parse_dates=['registration_init_time'],
-                          infer_datetime_format=True,
-                          dtype={'gender': 'category'})
+        new_trans = pd.read_csv(f'{partition_dir}/transactions.csv',
+                                parse_dates=['transaction_date', 'membership_expire_date'],
+                                infer_datetime_format=True)
+        new_logs = pd.read_csv(f'{partition_dir}/logs.csv', parse_dates=['date'])
 
-    trans = pd.read_csv(f'{partition_dir}/transactions.csv',
-                        parse_dates=['transaction_date', 'membership_expire_date'],
-                        infer_datetime_format=True)
-    logs = pd.read_csv(f'{partition_dir}/logs.csv', parse_dates=['date'])
+        new_cutoff_times = pd.read_csv(f'{partition_dir}/{cutoff_time_name}', parse_dates=['cutoff_time'])
+
+        if members is None:
+            members, trans, logs, cutoff_times = new_members, new_trans, new_logs, new_cutoff_times
+        else:
+            members = pd.concat([members, new_members])
+            trans = pd.concat([trans, new_trans])
+            logs = pd.concat([logs, new_logs])
+            cutoff_times = pd.concat([cutoff_times, new_cutoff_times])
 
     # Make sure to drop duplicates
-    cutoff_times = pd.read_csv(f'{partition_dir}/{cutoff_time_name}', parse_dates=['cutoff_time'])
     cutoff_times = cutoff_times.drop_duplicates(subset=['msno', 'cutoff_time'])[~cutoff_times['label'].isna()]
 
     # Create empty entityset
@@ -137,56 +142,61 @@ agg_primitives = ['sum', 'time_since_last', 'avg_time_between', 'all', 'mode', '
 trans_primitives = ['is_weekend', 'cum_sum', 'day', 'month', 'diff', 'time_since_previous']
 where_primitives = ['sum', 'mean', 'percent_true', 'all', 'any']
 
-if not os.path.exists(resources_folder + "features.dfs"):
-    feature_matrix, feature_defs = ft.dfs(entityset=es, target_entity='members',
-                                          cutoff_time=cutoff_times,
-                                          agg_primitives=agg_primitives,
-                                          trans_primitives=trans_primitives,
-                                          where_primitives=where_primitives,
-                                          max_depth=1, features_only=False,
-                                          verbose=1,
-                                          n_jobs=1,
-                                          cutoff_time_in_index=False)
-    # encode categorical values
-    feature_matrix, feature_defs = ft.encode_features(feature_matrix,
-                                                      feature_defs)
-
-    # Drop columns with missing values
-    missing_pct = feature_matrix.isnull().sum() / len(feature_matrix)
-    to_drop = list((missing_pct[missing_pct > 0.9]).index)
-    to_drop = [x for x in to_drop if x != 'days_to_churn']
-
-    # Drop highly correlated columns
-    threshold = 0.95
-
-    # Calculate correlations
-    corr_matrix = feature_matrix.corr().abs()
-
-    # Subset to the upper triangle of correlation matrix
-    upper = corr_matrix.where(
-        np.triu(np.ones(corr_matrix.shape), k=1).astype(np.bool))
-
-    # Identify names of columns with correlation above threshold
-    to_drop = to_drop + [column for column in upper.columns if any(
-        upper[column] >= threshold)]
-
-    to_drop_index = list(map(lambda x: list(feature_matrix.columns).index(x), to_drop))
-    feature_defs = [feature_defs[i] for i in range(len(feature_defs)) if i not in to_drop_index]
-    ft.save_features(feature_defs, resources_folder + "features.dfs")
-
 if __name__ == '__main__':
 
-    es, cutoff_times = partition_to_entity_set(0)
+    parser = argparse.ArgumentParser()
+    parser.add_argument("-p", "--partitions", type=int, help="Partitions to use")
+    parser.add_argument("-d", "--debug", help="Debug", action="store_true")
+    args = parser.parse_args()
 
-    if debug:
-        cutoff_times = cutoff_times[:1000]
+    es, cutoff_times = partition_to_entity_set(args.partitions)
 
-    feature_defs = ft.load_features(resources_folder + "features.dfs")
+    if args.debug:
+        cutoff_times = cutoff_times.sample(n=1000, random_state=42)
 
     split_date = pd.datetime(2016, 8, 1)
     cutoff_train = cutoff_times.loc[cutoff_times['cutoff_time'] < split_date].copy()
     cutoff_valid = cutoff_times.loc[cutoff_times['cutoff_time'] >= split_date].copy()
     print("%d train rows, %d test rows" % (len(cutoff_train), len(cutoff_valid)))
+
+    if not os.path.exists(resources_folder + "features.dfs"):
+        feature_matrix, feature_defs = ft.dfs(entityset=es, target_entity='members',
+                                              cutoff_time=cutoff_train,
+                                              agg_primitives=agg_primitives,
+                                              trans_primitives=trans_primitives,
+                                              where_primitives=where_primitives,
+                                              max_depth=1, features_only=False,
+                                              verbose=1,
+                                              n_jobs=1,
+                                              cutoff_time_in_index=False)
+        # encode categorical values
+        feature_matrix, feature_defs = ft.encode_features(feature_matrix,
+                                                          feature_defs)
+
+        # Drop columns with missing values
+        missing_pct = feature_matrix.isnull().sum() / len(feature_matrix)
+        to_drop = list((missing_pct[missing_pct > 0.9]).index)
+        to_drop = [x for x in to_drop if x != 'days_to_churn']
+
+        # Drop highly correlated columns
+        threshold = 0.95
+
+        # Calculate correlations
+        corr_matrix = feature_matrix.corr().abs()
+
+        # Subset to the upper triangle of correlation matrix
+        upper = corr_matrix.where(
+            np.triu(np.ones(corr_matrix.shape), k=1).astype(np.bool))
+
+        # Identify names of columns with correlation above threshold
+        to_drop = to_drop + [column for column in upper.columns if any(
+            upper[column] >= threshold)]
+
+        to_drop_index = list(map(lambda x: list(feature_matrix.columns).index(x), to_drop))
+        feature_defs = [feature_defs[i] for i in range(len(feature_defs)) if i not in to_drop_index]
+        ft.save_features(feature_defs, resources_folder + "features.dfs")
+
+    feature_defs = ft.load_features(resources_folder + "features.dfs")
 
     feature_matrix_train = ft.calculate_feature_matrix(feature_defs,
                                                        entityset=es,

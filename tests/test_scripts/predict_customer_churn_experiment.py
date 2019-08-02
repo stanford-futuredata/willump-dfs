@@ -11,18 +11,18 @@ from willump_dfs.evaluation.willump_dfs_graph_builder import *
 resources_folder = "tests/test_resources/predict_customer_churn/"
 partitions_dir = resources_folder + 'partitions/'
 
-debug = False
-
 if __name__ == '__main__':
 
     parser = argparse.ArgumentParser()
     parser.add_argument("-c", "--cascades", type=float, help="Cascade threshold")
+    parser.add_argument("-p", "--partitions", type=int, help="Partitions to use")
+    parser.add_argument("-d", "--debug", help="Debug", action="store_true")
     args = parser.parse_args()
     cascade_threshold = args.cascades
 
-    es, cutoff_times = partition_to_entity_set(0)
-    if debug:
-        cutoff_times = cutoff_times[:1000]
+    es, cutoff_times = partition_to_entity_set(args.partitions)
+    if args.debug:
+        cutoff_times = cutoff_times.sample(n=1000, random_state=42)
 
     total_previous = make_agg_primitive(total_previous_month, input_types=[ft.variable_types.Numeric,
                                                                            ft.variable_types.Datetime],
