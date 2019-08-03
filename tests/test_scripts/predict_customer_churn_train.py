@@ -158,6 +158,7 @@ if __name__ == '__main__':
     cutoff_train = cutoff_times.loc[cutoff_times['cutoff_time'] < split_date].copy()
     cutoff_valid = cutoff_times.loc[cutoff_times['cutoff_time'] >= split_date].copy()
     print("%d train rows, %d test rows" % (len(cutoff_train), len(cutoff_valid)))
+    del cutoff_valid
 
     if not os.path.exists(resources_folder + "features.dfs"):
         feature_matrix, feature_defs = ft.dfs(entityset=es, target_entity='members',
@@ -205,14 +206,7 @@ if __name__ == '__main__':
     feature_matrix_train = feature_matrix_train.replace({np.inf: np.nan, -np.inf: np.nan}). \
         fillna(feature_matrix_train.median())
 
-    feature_matrix_valid = ft.calculate_feature_matrix(feature_defs,
-                                                       entityset=es,
-                                                       cutoff_time=cutoff_valid,
-                                                       verbose=True).drop(columns=['days_to_churn', 'churn_date'])
-    feature_matrix_valid = feature_matrix_valid.replace({np.inf: np.nan, -np.inf: np.nan}). \
-        fillna(feature_matrix_valid.median())
-
-    train_y, test_y = np.array(feature_matrix_train.pop('label')), np.array(feature_matrix_valid.pop('label'))
+    train_y = np.array(feature_matrix_train.pop('label'))
 
     partitioned_features = willump_dfs_partition_features(feature_defs)
 
@@ -224,10 +218,22 @@ if __name__ == '__main__':
                                            predict_function=pcc_eval_function,
                                            scoring_function=roc_auc_score)
 
+    num_partitions = len(partitioned_features)
+    remove_indices = []
+    for i, (feature, cost, importance) in enumerate(zip(partitioned_features, partition_times, partition_importances)):
+        if importance <= 0:
+            remove_indices.append(i)
+    partitioned_features = [partitioned_features[i] for i in range(num_partitions) if i not in remove_indices]
+    partition_times = [partition_times[i] for i in range(num_partitions) if i not in remove_indices]
+    partition_importances = [partition_importances[i] for i in range(num_partitions) if i not in remove_indices]
+
     more_important_features, less_important_features = \
         willump_dfs_find_efficient_features(partitioned_features,
                                             partition_costs=partition_times,
                                             partition_importances=partition_importances)
+
+    print("# Features filtered: %d" % (
+            len(feature_defs) - len(more_important_features) - len(less_important_features)))
 
     for i, (features, cost, importance) in enumerate(zip(partitioned_features, partition_times, partition_importances)):
         print("%d Features: %s\nCost: %f  Importance: %f  Efficient: %r" % (i, features, cost, importance, all(
