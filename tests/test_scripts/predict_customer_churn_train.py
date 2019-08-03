@@ -160,44 +160,40 @@ if __name__ == '__main__':
     print("%d train rows, %d test rows" % (len(cutoff_train), len(cutoff_valid)))
     del cutoff_valid
 
-    if not os.path.exists(resources_folder + "features.dfs"):
-        feature_matrix, feature_defs = ft.dfs(entityset=es, target_entity='members',
-                                              cutoff_time=cutoff_train,
-                                              agg_primitives=agg_primitives,
-                                              trans_primitives=trans_primitives,
-                                              where_primitives=where_primitives,
-                                              max_depth=1, features_only=False,
-                                              verbose=1,
-                                              n_jobs=1,
-                                              cutoff_time_in_index=False)
-        # encode categorical values
-        feature_matrix, feature_defs = ft.encode_features(feature_matrix,
-                                                          feature_defs)
+    feature_matrix, feature_defs = ft.dfs(entityset=es, target_entity='members',
+                                          cutoff_time=cutoff_train,
+                                          agg_primitives=agg_primitives,
+                                          trans_primitives=trans_primitives,
+                                          where_primitives=where_primitives,
+                                          max_depth=1, features_only=False,
+                                          verbose=1,
+                                          n_jobs=1,
+                                          cutoff_time_in_index=False)
+    # encode categorical values
+    feature_matrix, feature_defs = ft.encode_features(feature_matrix,
+                                                      feature_defs)
 
-        # Drop columns with missing values
-        missing_pct = feature_matrix.isnull().sum() / len(feature_matrix)
-        to_drop = list((missing_pct[missing_pct > 0.9]).index)
-        to_drop = [x for x in to_drop if x != 'days_to_churn']
+    # Drop columns with missing values
+    missing_pct = feature_matrix.isnull().sum() / len(feature_matrix)
+    to_drop = list((missing_pct[missing_pct > 0.9]).index)
+    to_drop = [x for x in to_drop if x != 'days_to_churn']
 
-        # Drop highly correlated columns
-        threshold = 0.95
+    # Drop highly correlated columns
+    threshold = 0.95
 
-        # Calculate correlations
-        corr_matrix = feature_matrix.corr().abs()
+    # Calculate correlations
+    corr_matrix = feature_matrix.corr().abs()
 
-        # Subset to the upper triangle of correlation matrix
-        upper = corr_matrix.where(
-            np.triu(np.ones(corr_matrix.shape), k=1).astype(np.bool))
+    # Subset to the upper triangle of correlation matrix
+    upper = corr_matrix.where(
+        np.triu(np.ones(corr_matrix.shape), k=1).astype(np.bool))
 
-        # Identify names of columns with correlation above threshold
-        to_drop = to_drop + [column for column in upper.columns if any(
-            upper[column] >= threshold)]
+    # Identify names of columns with correlation above threshold
+    to_drop = to_drop + [column for column in upper.columns if any(
+        upper[column] >= threshold)]
 
-        to_drop_index = list(map(lambda x: list(feature_matrix.columns).index(x), to_drop))
-        feature_defs = [feature_defs[i] for i in range(len(feature_defs)) if i not in to_drop_index]
-        ft.save_features(feature_defs, resources_folder + "features.dfs")
-
-    feature_defs = ft.load_features(resources_folder + "features.dfs")
+    to_drop_index = list(map(lambda x: list(feature_matrix.columns).index(x), to_drop))
+    feature_defs = [feature_defs[i] for i in range(len(feature_defs)) if i not in to_drop_index]
 
     feature_matrix_train = ft.calculate_feature_matrix(feature_defs,
                                                        entityset=es,
