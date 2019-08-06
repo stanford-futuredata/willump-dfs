@@ -21,6 +21,7 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument("-c", "--cascades", type=float, help="Cascade threshold")
     parser.add_argument("-d", "--dataset", type=str, help="Cascade threshold")
+    parser.add_argument("-t", "--threshold", help="Use threshold set", action="store_true")
     args = parser.parse_args()
     cascade_threshold = args.cascades
     dataset = args.dataset
@@ -52,6 +53,11 @@ if __name__ == '__main__':
     small_model = pickle.load(open(resources_folder + "small_model.pk", "rb"))
 
     _, label_times_test = train_test_split(label_times, test_size=0.2, random_state=42)
+    lt_t, lt_v = train_test_split(label_times_test, test_size=0.5, random_state=42)
+    if args.threshold:
+        label_times_test = lt_t
+    else:
+        label_times_test = lt_v
     label_times_test = label_times_test.sort_values(by=["user_id"])
     y_test = label_times_test.pop("label")
     print("Test dataset length: %d" % len(label_times_test))
