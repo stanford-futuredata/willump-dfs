@@ -208,7 +208,7 @@ if __name__ == '__main__':
 
     partition_times = willump_dfs_time_partitioned_features(partitioned_features, es, cutoff_train)
     partition_importances = \
-        willump_dfs_mean_decrease_accuracy(feature_defs, partitioned_features,
+        willump_dfs_permutation_importance(feature_defs, partitioned_features,
                                            feature_matrix_train.values, train_y,
                                            train_function=pcc_train_function,
                                            predict_function=pcc_eval_function,

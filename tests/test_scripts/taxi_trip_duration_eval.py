@@ -199,7 +199,7 @@ if __name__ == "__main__":
     partitioned_features = willump_dfs_partition_features(features)
     partition_times = willump_dfs_time_partitioned_features(partitioned_features, es, cutoff_train, approximate='36d')
     partition_importances = \
-        willump_dfs_mean_decrease_accuracy(features, partitioned_features, feature_matrix_train.values, y_train,
+        willump_dfs_permutation_importance(features, partitioned_features, feature_matrix_train.values, y_train,
                                            train_function=taxi_utils.train_xgb,
                                            predict_function=taxi_utils.predict_xgb,
                                            scoring_function=taxi_utils.rmse_scoring)

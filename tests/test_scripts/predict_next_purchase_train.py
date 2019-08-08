@@ -78,16 +78,35 @@ if __name__ == '__main__':
 
     partition_times = willump_dfs_time_partitioned_features(partitioned_features, es, label_times)
     partition_importances = \
-        willump_dfs_mean_decrease_accuracy(features_encoded, partitioned_features,
+        willump_dfs_permutation_importance(features_encoded, partitioned_features,
                                            top_feature_matrix_train.values, y_train.values,
                                            train_function=utils.pnp_train_function,
                                            predict_function=utils.pnp_predict_function,
                                            scoring_function=roc_auc_score)
 
-    more_important_features, less_important_features = \
-        willump_dfs_find_efficient_features(partitioned_features,
-                                            partition_costs=partition_times,
-                                            partition_importances=partition_importances)
+    min_cost = np.inf
+    more_important_features, less_important_features, cascade_threshold, cost_cutoff = None, None, None, None
+    for cc_candidate in [0.1, 0.2, 0.3, 0.4, 0.5]:
+        mi_features_candidate, li_features_candidate, mi_cost, total_cost = \
+            willump_dfs_find_efficient_features(partitioned_features,
+                                                partition_costs=partition_times,
+                                                partition_importances=partition_importances, cost_cutoff=cc_candidate)
+        t_candidate, cost = calculate_feature_set_performance(x=top_feature_matrix_train.values, y=y_train.values,
+                                                              mi_cost=mi_cost, total_cost=total_cost,
+                                                              mi_features=mi_features_candidate,
+                                                              all_features=features_encoded,
+                                                              train_function=utils.pnp_train_function,
+                                                              predict_function=utils.pnp_predict_function,
+                                                              predict_proba_function=utils.pnp_predict_proba_function,
+                                                              score_function=roc_auc_score)
+        if cost < min_cost:
+            more_important_features = mi_features_candidate
+            less_important_features = li_features_candidate
+            cascade_threshold = t_candidate
+            cost_cutoff = cc_candidate
+            min_cost = cost
+
+    print("Cost Cutoff: %f Cascade Threshold: %f" % (cost_cutoff, cascade_threshold))
 
     for i, (features, cost, importance) in enumerate(zip(partitioned_features, partition_times, partition_importances)):
         print("%d Features: %s\nCost: %f  Importance: %f  Efficient: %r" % (i, features, cost, importance, all(
@@ -105,3 +124,4 @@ if __name__ == '__main__':
     pickle.dump(full_model, open(resources_folder + "full_model.pk", "wb"))
     ft.save_features(more_important_features, resources_folder + "mi_features.dfs")
     pickle.dump(small_model, open(resources_folder + "small_model.pk", "wb"))
+    pickle.dump(cascade_threshold, open(resources_folder + "cascades_parameters.pk", "wb"))

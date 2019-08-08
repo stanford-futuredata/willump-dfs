@@ -8,6 +8,7 @@ from sklearn.model_selection import ShuffleSplit
 
 from willump_dfs.evaluation.willump_dfs_utils import index_feature_in_list
 from willump_dfs.graph.willump_dfs_graph import WillumpDFSGraph
+from sklearn.model_selection import train_test_split
 
 
 def willump_dfs_partition_features(features: List[FeatureBase]) -> List[List[FeatureBase]]:
@@ -48,8 +49,8 @@ def willump_dfs_get_partition_importances(partitioned_features: List[List[Featur
 
 
 def willump_dfs_find_efficient_features(partitioned_features: List[List[FeatureBase]], partition_costs: List[float],
-                                        partition_importances: List[float]) \
-        -> Tuple[List[FeatureBase], List[FeatureBase]]:
+                                        partition_importances: List[float], cost_cutoff: float) \
+        -> Tuple[List[FeatureBase], List[FeatureBase], float, float]:
     """
     Implements Willump's algorithm for finding efficient features.
     """
@@ -58,27 +59,46 @@ def willump_dfs_find_efficient_features(partitioned_features: List[List[FeatureB
     partition_efficiencies = [importance / cost for importance, cost in zip(partition_importances, partition_costs)]
     ranked_partitions = sorted(partition_ids, key=lambda x: partition_efficiencies[x], reverse=True)
     current_cost = 0
-    current_importance = 0
     more_important_partitions = []
     for p_id in ranked_partitions:
-        if current_cost == 0:
-            average_efficiency = 0
-        else:
-            average_efficiency = current_importance / current_cost
-        partition_efficiency = partition_efficiencies[p_id]
-        if partition_efficiency < average_efficiency / 5:
-            break
-        if current_cost + partition_costs[p_id] <= 0.5 * total_cost:
+        if current_cost + partition_costs[p_id] <= cost_cutoff * total_cost:
             more_important_partitions.append(p_id)
             current_cost += partition_costs[p_id]
-            current_importance += partition_importances[p_id]
     less_important_partitions = [p_id for p_id in partition_ids if p_id not in more_important_partitions]
     more_important_features, less_important_features = [], []
     for p_id in more_important_partitions:
         more_important_features += partitioned_features[p_id]
     for p_id in less_important_partitions:
         less_important_features += partitioned_features[p_id]
-    return more_important_features, less_important_features
+    return more_important_features, less_important_features, current_cost, total_cost
+
+
+def calculate_feature_set_performance(x, y, mi_cost: float, total_cost: float, mi_features, all_features,
+                                      train_function, predict_function, predict_proba_function, score_function):
+    mi_indices = list(map(lambda feature: index_feature_in_list(feature, all_features), mi_features))
+    x_train, x_holdout, y_train, y_holdout = train_test_split(x, y, test_size=0.25, random_state=42)
+    original_model = train_function(x_train, y_train)
+    original_model_holdout_predictions = predict_function(original_model, x_holdout)
+    original_score = score_function(y_holdout, original_model_holdout_predictions)
+    x_train_small, x_holdout_small = x_train[:, mi_indices], x_holdout[:, mi_indices]
+    small_model = train_function(x_train_small, y_train)
+    small_confidences = predict_proba_function(small_model, x_holdout_small)
+    small_preds = predict_function(small_model, x_holdout_small)
+    threshold_to_combined_cost_map = {}
+    for cascade_threshold in [0.5, 0.6, 0.7, 0.8, 0.9, 1.0]:
+        combined_preds = original_model_holdout_predictions.copy()
+        num_mi_predicted = 0
+        for i in range(len(small_confidences)):
+            if small_confidences[i] > cascade_threshold or small_confidences[i] < 1 - cascade_threshold:
+                num_mi_predicted += 1
+                combined_preds[i] = small_preds[i]
+        combined_score = score_function(y_holdout, combined_preds)
+        frac_mi_predicted = num_mi_predicted / len(combined_preds)
+        combined_cost = frac_mi_predicted * mi_cost + (1 - frac_mi_predicted) * total_cost
+        if combined_score > original_score - 0.001:
+            threshold_to_combined_cost_map[cascade_threshold] = combined_cost
+    best_threshold, best_cost = min(threshold_to_combined_cost_map.items(), key=lambda x: x[1])
+    return best_threshold, best_cost
 
 
 def willump_dfs_train_models(more_important_features: List[FeatureBase], less_important_features: List[FeatureBase],
@@ -107,7 +127,8 @@ def willump_dfs_cascade(more_important_features: List[FeatureBase], less_importa
     cutoff_times[sort_col] = range(len(cutoff_times))
     mi_feature_matrix = ft.calculate_feature_matrix(more_important_features,
                                                     entityset=entity_set,
-                                                    cutoff_time=cutoff_times).sort_values(by=sort_col).drop(sort_col, axis=1)
+                                                    cutoff_time=cutoff_times).sort_values(by=sort_col).drop(sort_col,
+                                                                                                            axis=1)
     mi_feature_matrix = mi_feature_matrix.replace({np.inf: np.nan, -np.inf: np.nan}). \
         fillna(mi_feature_matrix.median())
     small_model_probs = small_model.predict_proba(mi_feature_matrix)
@@ -120,7 +141,8 @@ def willump_dfs_cascade(more_important_features: List[FeatureBase], less_importa
     if len(cascaded_times) > 0:
         li_feature_matrix = ft.calculate_feature_matrix(less_important_features,
                                                         entityset=entity_set,
-                                                        cutoff_time=cascaded_times).sort_values(by=sort_col).drop(sort_col, axis=1)
+                                                        cutoff_time=cascaded_times).sort_values(by=sort_col).drop(
+            sort_col, axis=1)
         li_feature_matrix = li_feature_matrix.replace({np.inf: np.nan, -np.inf: np.nan}). \
             fillna(li_feature_matrix.median())
         full_feature_matrix = np.hstack((cascaded_mi_matrix, li_feature_matrix))
@@ -133,7 +155,7 @@ def willump_dfs_cascade(more_important_features: List[FeatureBase], less_importa
     return combined_preds
 
 
-def willump_dfs_mean_decrease_accuracy(features: List[FeatureBase],
+def willump_dfs_permutation_importance(features: List[FeatureBase],
                                        partitioned_features: List[List[FeatureBase]], X, y,
                                        train_function, predict_function, scoring_function) -> List[float]:
     """

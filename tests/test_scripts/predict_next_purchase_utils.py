@@ -111,10 +111,14 @@ def feature_importances(model, features, n=10, verbose=False):
 
 
 def pnp_train_function(X_train, y_train):
-    clf = RandomForestClassifier(n_estimators=400, n_jobs=1)
+    clf = RandomForestClassifier(n_estimators=400, n_jobs=1, random_state=42)
     clf.fit(X_train, y_train)
     return clf
 
 
 def pnp_predict_function(model, X_test):
     return model.predict(X_test)
+
+
+def pnp_predict_proba_function(model, X):
+    return model.predict_proba(X)[:, 1]
