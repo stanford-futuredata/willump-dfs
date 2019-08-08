@@ -7,7 +7,6 @@ from sklearn.metrics import roc_auc_score
 
 from predict_customer_churn_train import partition_to_entity_set, total_previous_month
 from willump_dfs.evaluation.willump_dfs_graph_builder import *
-from sklearn.model_selection import train_test_split
 
 resources_folder = "tests/test_resources/predict_customer_churn/"
 partitions_dir = resources_folder + 'partitions/'
@@ -15,12 +14,11 @@ partitions_dir = resources_folder + 'partitions/'
 if __name__ == '__main__':
 
     parser = argparse.ArgumentParser()
-    parser.add_argument("-c", "--cascades", type=float, help="Cascade threshold")
+    parser.add_argument("-c", "--cascades", action="store_true", help="Cascade threshold")
     parser.add_argument("-p", "--partitions", type=int, help="Partitions to use")
     parser.add_argument("-d", "--debug", help="Debug", action="store_true")
-    parser.add_argument("-t", "--threshold", help="Use threshold set", action="store_true")
     args = parser.parse_args()
-    cascade_threshold = args.cascades
+    cascade_threshold = pickle.load(open(resources_folder + "cascade_parameters.pk", "rb"))
 
     es, cutoff_times = partition_to_entity_set(args.partitions)
     if args.debug:
@@ -39,14 +37,9 @@ if __name__ == '__main__':
     split_date = pd.datetime(2016, 8, 1)
     cutoff_valid = cutoff_times.loc[cutoff_times['cutoff_time'] >= split_date].copy().drop(
         columns=['days_to_churn', 'churn_date'])
-    lt_t, lt_v = train_test_split(cutoff_valid, test_size=0.5, random_state=42)
-    if args.threshold:
-        cutoff_valid = lt_t
-    else:
-        cutoff_valid = lt_v
     test_y = cutoff_valid.pop("label")
 
-    if cascade_threshold is None:
+    if not args.cascades:
         print("Without Cascades")
         # Evaluate model.
         sort_col = "pcc_sort_col"

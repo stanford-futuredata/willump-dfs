@@ -19,13 +19,17 @@ def pcc_train_function(X, y):
     model = RandomForestClassifier(n_estimators=100, max_depth=40,
                                    min_samples_leaf=50,
                                    n_jobs=1, class_weight='balanced',
-                                   random_state=50)
+                                   random_state=42)
     model.fit(X, y)
     return model
 
 
-def pcc_eval_function(model, X_valid):
+def pcc_predict_function(model, X_valid):
     return model.predict(X_valid)
+
+
+def pcc_predict_proba_function(model, X):
+    return model.predict_proba(X)[:, 1]
 
 
 def partition_to_entity_set(partition_end, cutoff_time_name='MS-31_labels.csv'):
@@ -211,7 +215,7 @@ if __name__ == '__main__':
         willump_dfs_permutation_importance(feature_defs, partitioned_features,
                                            feature_matrix_train.values, train_y,
                                            train_function=pcc_train_function,
-                                           predict_function=pcc_eval_function,
+                                           predict_function=pcc_predict_function,
                                            scoring_function=roc_auc_score)
 
     num_partitions = len(partitioned_features)
@@ -223,10 +227,29 @@ if __name__ == '__main__':
     partition_times = [partition_times[i] for i in range(num_partitions) if i not in remove_indices]
     partition_importances = [partition_importances[i] for i in range(num_partitions) if i not in remove_indices]
 
-    more_important_features, less_important_features = \
-        willump_dfs_find_efficient_features(partitioned_features,
-                                            partition_costs=partition_times,
-                                            partition_importances=partition_importances)
+    min_cost = np.inf
+    more_important_features, less_important_features, cascade_threshold, cost_cutoff = None, None, None, None
+    for cc_candidate in [0.1, 0.2, 0.3, 0.4, 0.5]:
+        mi_features_candidate, li_features_candidate, mi_cost, total_cost = \
+            willump_dfs_find_efficient_features(partitioned_features,
+                                                partition_costs=partition_times,
+                                                partition_importances=partition_importances, cost_cutoff=cc_candidate)
+        t_candidate, cost = calculate_feature_set_performance(x=feature_matrix_train.values, y=train_y,
+                                                              mi_cost=mi_cost, total_cost=total_cost,
+                                                              mi_features=mi_features_candidate,
+                                                              all_features=feature_defs,
+                                                              train_function=pcc_train_function,
+                                                              predict_function=pcc_predict_function,
+                                                              predict_proba_function=pcc_predict_proba_function,
+                                                              score_function=roc_auc_score)
+        if cost < min_cost:
+            more_important_features = mi_features_candidate
+            less_important_features = li_features_candidate
+            cascade_threshold = t_candidate
+            cost_cutoff = cc_candidate
+            min_cost = cost
+
+    print("Cost Cutoff: %f Cascade Threshold: %f" % (cost_cutoff, cascade_threshold))
 
     print("# Features filtered: %d" % (
             len(feature_defs) - len(more_important_features) - len(less_important_features)))
@@ -257,3 +280,4 @@ if __name__ == '__main__':
     ft.save_features(more_important_features, resources_folder + "mi_features.dfs")
     pickle.dump(small_model, open(resources_folder + "small_model.pk", "wb"))
     pickle.dump(full_model, open(resources_folder + "full_model.pk", "wb"))
+    pickle.dump(cascade_threshold, open(resources_folder + "cascade_parameters.pk", "wb"))
