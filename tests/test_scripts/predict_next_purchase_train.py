@@ -21,14 +21,18 @@ if __name__ == '__main__':
 
     parser = argparse.ArgumentParser()
     parser.add_argument("-d", "--dataset", type=str, help="Cascade threshold")
+    parser.add_argument("-k", "--top_k", type=int, help="Top-K to return")
     args = parser.parse_args()
     dataset = args.dataset
     if dataset == "small":
         data_folder = data_small
+        valid_size = 10
     elif dataset == "large":
         data_folder = data_large
+        valid_size = 1000
     elif dataset == "huge":
         data_folder = data_full
+        valid_size = 5000
     else:
         print("Invalid dataset")
         exit(1)
@@ -62,11 +66,11 @@ if __name__ == '__main__':
     clf = utils.pnp_train_function(X, y)
     features_encoded = utils.feature_importances(clf, features_encoded, n=20)
 
-    label_times_train, label_times_test = train_test_split(label_times, test_size=0.2, random_state=42)
+    label_times_train, _ = train_test_split(label_times, test_size=0.2, random_state=42)
     label_times_train = label_times_train.sort_values(by=["user_id"])
-    label_times_test = label_times_test.sort_values(by=["user_id"])
     y_train = label_times_train.pop("label")
-    y_test = label_times_test.pop("label")
+
+    print("Train Set Size: %d" % len(y_train))
 
     # Train model with top features.
     top_feature_matrix_train = ft.calculate_feature_matrix(features_encoded,
@@ -91,14 +95,25 @@ if __name__ == '__main__':
             willump_dfs_find_efficient_features(partitioned_features,
                                                 partition_costs=partition_times,
                                                 partition_importances=partition_importances, cost_cutoff=cc_candidate)
-        t_candidate, cost = calculate_feature_set_performance(x=top_feature_matrix_train.values, y=y_train.values,
-                                                              mi_cost=mi_cost, total_cost=total_cost,
-                                                              mi_features=mi_features_candidate,
-                                                              all_features=features_encoded,
-                                                              train_function=utils.pnp_train_function,
-                                                              predict_function=utils.pnp_predict_function,
-                                                              predict_proba_function=utils.pnp_predict_proba_function,
-                                                              score_function=roc_auc_score)
+        if args.top_k is not None:
+            t_candidate, cost = calculate_feature_set_performance_topk(x=top_feature_matrix_train.values,
+                                                                       y=y_train.values,
+                                                                       mi_cost=mi_cost, total_cost=total_cost,
+                                                                       mi_features=mi_features_candidate,
+                                                                       all_features=features_encoded,
+                                                                       train_function=utils.pnp_train_function,
+                                                                       predict_proba_function=utils.pnp_predict_proba_function,
+                                                                       top_k=args.top_k,
+                                                                       valid_size=valid_size)
+        else:
+            t_candidate, cost = calculate_feature_set_performance(x=top_feature_matrix_train.values, y=y_train.values,
+                                                                  mi_cost=mi_cost, total_cost=total_cost,
+                                                                  mi_features=mi_features_candidate,
+                                                                  all_features=features_encoded,
+                                                                  train_function=utils.pnp_train_function,
+                                                                  predict_function=utils.pnp_predict_function,
+                                                                  predict_proba_function=utils.pnp_predict_proba_function,
+                                                                  score_function=roc_auc_score)
         if cost < min_cost:
             more_important_features = mi_features_candidate
             less_important_features = li_features_candidate

@@ -101,6 +101,33 @@ def calculate_feature_set_performance(x, y, mi_cost: float, total_cost: float, m
     return best_threshold, best_cost
 
 
+def calculate_feature_set_performance_topk(x, y, mi_cost: float, total_cost: float, mi_features, all_features,
+                                           train_function, predict_proba_function,
+                                           top_k, valid_size):
+    mi_feature_indices = list(map(lambda feature: index_feature_in_list(feature, all_features), mi_features))
+    train_x, valid_x, train_y, _ = train_test_split(x, y, test_size=0.25, random_state=42)
+    assert valid_x.shape[0] >= valid_size
+    train_x_efficient, valid_x_efficient = train_x[:, mi_feature_indices], valid_x[:, mi_feature_indices]
+    orig_model = train_function(train_x, train_y)
+    small_model = train_function(train_x_efficient, train_y)
+    ratios_map = {i: True for i in range(1, valid_size // top_k)}
+    num_validations = min(valid_x.shape[0] // valid_size, 10)
+    for i in range(num_validations):
+        small_probs = predict_proba_function(small_model, valid_x_efficient[i * valid_size:(i + 1) * valid_size])
+        orig_probs = predict_proba_function(orig_model, valid_x[i * valid_size:(i + 1) * valid_size])
+        assert (len(small_probs) == len(orig_probs) == valid_size)
+        orig_model_top_k_idx = np.argsort(orig_probs)[-1 * top_k:]
+        for ratio in range(1, valid_size // top_k):
+            small_model_top_ratio_k_idx = np.argsort(small_probs)[-1 * top_k * ratio:]
+            small_model_precision = len(np.intersect1d(orig_model_top_k_idx, small_model_top_ratio_k_idx)) / top_k
+            if not small_model_precision > 0.95:
+                ratios_map[ratio] = False
+    good_ratios = [ratio for ratio in ratios_map.keys() if ratios_map[ratio] is True]
+    good_ratio = min(good_ratios)
+    cost = mi_cost * valid_size + total_cost * good_ratio * top_k
+    return good_ratio, cost
+
+
 def willump_dfs_train_models(more_important_features: List[FeatureBase], less_important_features: List[FeatureBase],
                              entity_set, training_times, y_train, train_function, approximate=None):
     full_features = more_important_features + less_important_features
@@ -153,6 +180,40 @@ def willump_dfs_cascade(more_important_features: List[FeatureBase], less_importa
                 combined_preds[i] = full_model_preds[f_index]
                 f_index += 1
     return combined_preds
+
+
+def willump_dfs_topk_cascade(more_important_features: List[FeatureBase], less_important_features: List[FeatureBase],
+                             entity_set, cutoff_times, small_model, full_model, ratio, top_k):
+    sort_col = "__willump_sort_col"
+    cutoff_times[sort_col] = range(len(cutoff_times))
+    mi_feature_matrix = ft.calculate_feature_matrix(more_important_features,
+                                                    entityset=entity_set,
+                                                    cutoff_time=cutoff_times).sort_values(by=sort_col).drop(sort_col,
+                                                                                                            axis=1)
+    mi_feature_matrix = mi_feature_matrix.replace({np.inf: np.nan, -np.inf: np.nan}). \
+        fillna(mi_feature_matrix.median())
+    small_model_probs = small_model.predict_proba(mi_feature_matrix)[:, 1]
+    small_model_top_ratio_k_idx = np.argsort(small_model_probs)[-1 * top_k * ratio:]
+    mask = np.zeros(len(small_model_probs), dtype=bool)
+    mask[small_model_top_ratio_k_idx] = True
+    cascaded_times = cutoff_times[mask]
+    cascaded_mi_matrix = mi_feature_matrix[mask]
+    assert(sum(mask) == top_k * ratio == len(cascaded_times))
+    preds = np.zeros(len(small_model_probs))
+    li_feature_matrix = ft.calculate_feature_matrix(less_important_features,
+                                                    entityset=entity_set,
+                                                    cutoff_time=cascaded_times).sort_values(by=sort_col).drop(
+        sort_col, axis=1)
+    li_feature_matrix = li_feature_matrix.replace({np.inf: np.nan, -np.inf: np.nan}). \
+        fillna(li_feature_matrix.median())
+    full_feature_matrix = np.hstack((cascaded_mi_matrix, li_feature_matrix))
+    full_model_preds = full_model.predict_proba(full_feature_matrix)[:, 1]
+    f_index = 0
+    for i in range(len(preds)):
+        if mask[i]:
+            preds[i] = full_model_preds[f_index]
+            f_index += 1
+    return preds
 
 
 def willump_dfs_permutation_importance(features: List[FeatureBase],
