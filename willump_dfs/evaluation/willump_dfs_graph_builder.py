@@ -8,7 +8,7 @@ from sklearn.model_selection import ShuffleSplit
 
 from willump_dfs.evaluation.willump_dfs_utils import index_feature_in_list
 from willump_dfs.graph.willump_dfs_graph import WillumpDFSGraph
-from sklearn.model_selection import train_test_split
+from sklearn.model_selection import train_test_split, KFold
 
 
 def willump_dfs_partition_features(features: List[FeatureBase]) -> List[List[FeatureBase]]:
@@ -101,26 +101,33 @@ def calculate_feature_set_performance(x, y, mi_cost: float, total_cost: float, m
     return best_threshold, best_cost
 
 
+trained_models = {}
+
+
 def calculate_feature_set_performance_topk(x, y, mi_cost: float, total_cost: float, mi_features, all_features,
                                            train_function, predict_proba_function,
                                            top_k, valid_size):
     mi_feature_indices = list(map(lambda feature: index_feature_in_list(feature, all_features), mi_features))
-    train_x, valid_x, train_y, _ = train_test_split(x, y, test_size=0.25, random_state=42)
-    assert valid_x.shape[0] >= valid_size
-    train_x_efficient, valid_x_efficient = train_x[:, mi_feature_indices], valid_x[:, mi_feature_indices]
-    orig_model = train_function(train_x, train_y)
-    small_model = train_function(train_x_efficient, train_y)
+    kf = KFold(n_splits=4, random_state=42)
     ratios_map = {i: True for i in range(1, valid_size // top_k)}
-    num_validations = min(valid_x.shape[0] // valid_size, 10)
-    for i in range(num_validations):
-        small_probs = predict_proba_function(small_model, valid_x_efficient[i * valid_size:(i + 1) * valid_size])
-        orig_probs = predict_proba_function(orig_model, valid_x[i * valid_size:(i + 1) * valid_size])
-        assert (len(small_probs) == len(orig_probs) == valid_size)
+    for train_index, valid_index in kf.split(x):
+        train_x, valid_x, train_y, valid_y = x[train_index], x[valid_index], y[train_index], y[valid_index]
+        train_x_efficient, valid_x_efficient = train_x[:, mi_feature_indices], valid_x[:, mi_feature_indices]
+        assert valid_size - 2 <= valid_x.shape[0] <= valid_size + 2
+        small_model = train_function(train_x_efficient, train_y)
+        if tuple(train_index) not in trained_models:
+            orig_model = train_function(train_x, train_y)
+            trained_models[tuple(train_index)] = orig_model
+        else:
+            orig_model = trained_models[tuple(train_index)]
+        small_probs = predict_proba_function(small_model, valid_x_efficient)
+        orig_probs = predict_proba_function(orig_model, valid_x)
+        assert (len(small_probs) == len(orig_probs) == valid_x.shape[0])
         orig_model_top_k_idx = np.argsort(orig_probs)[-1 * top_k:]
         for ratio in range(1, valid_size // top_k):
             small_model_top_ratio_k_idx = np.argsort(small_probs)[-1 * top_k * ratio:]
             small_model_precision = len(np.intersect1d(orig_model_top_k_idx, small_model_top_ratio_k_idx)) / top_k
-            if not small_model_precision > 0.95:
+            if not small_model_precision >= 0.95:
                 ratios_map[ratio] = False
     good_ratios = [ratio for ratio in ratios_map.keys() if ratios_map[ratio] is True]
     good_ratio = min(good_ratios)
@@ -198,7 +205,7 @@ def willump_dfs_topk_cascade(more_important_features: List[FeatureBase], less_im
     mask[small_model_top_ratio_k_idx] = True
     cascaded_times = cutoff_times[mask]
     cascaded_mi_matrix = mi_feature_matrix[mask]
-    assert(sum(mask) == top_k * ratio == len(cascaded_times))
+    assert (sum(mask) == top_k * ratio == len(cascaded_times))
     preds = np.zeros(len(small_model_probs))
     li_feature_matrix = ft.calculate_feature_matrix(less_important_features,
                                                     entityset=entity_set,
