@@ -130,6 +130,8 @@ def calculate_feature_set_performance_topk(x, y, mi_cost: float, total_cost: flo
             if not small_model_precision >= 0.95:
                 ratios_map[ratio] = False
     good_ratios = [ratio for ratio in ratios_map.keys() if ratios_map[ratio] is True]
+    if len(good_ratios) == 0:
+        return valid_size // top_k, total_cost * valid_size
     good_ratio = min(good_ratios)
     cost = mi_cost * valid_size + (total_cost - mi_cost) * good_ratio * top_k
     return good_ratio, cost

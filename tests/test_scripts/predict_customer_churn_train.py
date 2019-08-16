@@ -150,6 +150,7 @@ if __name__ == '__main__':
 
     parser = argparse.ArgumentParser()
     parser.add_argument("-p", "--partitions", type=int, help="Partitions to use")
+    parser.add_argument("-k", "--top_k", type=int, help="Top-K to return")
     parser.add_argument("-d", "--debug", help="Debug", action="store_true")
     args = parser.parse_args()
 
@@ -161,6 +162,7 @@ if __name__ == '__main__':
     split_date = pd.datetime(2016, 8, 1)
     cutoff_train = cutoff_times.loc[cutoff_times['cutoff_time'] < split_date].copy()
     cutoff_valid = cutoff_times.loc[cutoff_times['cutoff_time'] >= split_date].copy()
+    valid_size = len(cutoff_train) // 4
     print("%d train rows, %d test rows" % (len(cutoff_train), len(cutoff_valid)))
     del cutoff_valid
 
@@ -234,14 +236,25 @@ if __name__ == '__main__':
             willump_dfs_find_efficient_features(partitioned_features,
                                                 partition_costs=partition_times,
                                                 partition_importances=partition_importances, cost_cutoff=cc_candidate)
-        t_candidate, cost = calculate_feature_set_performance(x=feature_matrix_train.values, y=train_y,
-                                                              mi_cost=mi_cost, total_cost=total_cost,
-                                                              mi_features=mi_features_candidate,
-                                                              all_features=feature_defs,
-                                                              train_function=pcc_train_function,
-                                                              predict_function=pcc_predict_function,
-                                                              predict_proba_function=pcc_predict_proba_function,
-                                                              score_function=roc_auc_score)
+        if args.top_k is not None:
+            t_candidate, cost = calculate_feature_set_performance_topk(x=feature_matrix_train.values,
+                                                                       y=train_y,
+                                                                       mi_cost=mi_cost, total_cost=total_cost,
+                                                                       mi_features=mi_features_candidate,
+                                                                       all_features=feature_defs,
+                                                                       train_function=pcc_train_function,
+                                                                       predict_proba_function=pcc_predict_proba_function,
+                                                                       top_k=args.top_k,
+                                                                       valid_size=valid_size)
+        else:
+            t_candidate, cost = calculate_feature_set_performance(x=feature_matrix_train.values, y=train_y,
+                                                                  mi_cost=mi_cost, total_cost=total_cost,
+                                                                  mi_features=mi_features_candidate,
+                                                                  all_features=feature_defs,
+                                                                  train_function=pcc_train_function,
+                                                                  predict_function=pcc_predict_function,
+                                                                  predict_proba_function=pcc_predict_proba_function,
+                                                                  score_function=roc_auc_score)
         if cost < min_cost:
             more_important_features = mi_features_candidate
             less_important_features = li_features_candidate
