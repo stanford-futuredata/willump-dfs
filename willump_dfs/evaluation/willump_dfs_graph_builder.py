@@ -124,7 +124,7 @@ def calculate_feature_set_performance_topk(x, y, mi_cost: float, total_cost: flo
                 ratios_map[ratio] = False
     good_ratios = [ratio for ratio in ratios_map.keys() if ratios_map[ratio] is True]
     good_ratio = min(good_ratios)
-    cost = mi_cost * valid_size + total_cost * good_ratio * top_k
+    cost = mi_cost * valid_size + (total_cost - mi_cost) * good_ratio * top_k
     return good_ratio, cost
 
 

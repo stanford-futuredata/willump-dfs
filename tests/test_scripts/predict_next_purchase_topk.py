@@ -26,13 +26,10 @@ if __name__ == '__main__':
     dataset = args.dataset
     if dataset == "small":
         data_folder = data_small
-        valid_size = 10
     elif dataset == "large":
         data_folder = data_large
-        valid_size = 1000
     elif dataset == "huge":
         data_folder = data_full
-        valid_size = 5000
     else:
         print("Invalid dataset")
         exit(1)
@@ -57,7 +54,7 @@ if __name__ == '__main__':
     small_model = pickle.load(open(resources_folder + "small_model.pk", "rb"))
 
     _, label_times_test = train_test_split(label_times, test_size=0.2, random_state=42)
-    label_times_test = label_times_test.sort_values(by=["user_id"]).iloc[:5000]
+    label_times_test = label_times_test.sort_values(by=["user_id"])
     _ = label_times_test.pop("label")
     print("Test dataset length: %d" % len(label_times_test))
 

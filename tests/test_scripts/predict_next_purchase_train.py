@@ -26,13 +26,10 @@ if __name__ == '__main__':
     dataset = args.dataset
     if dataset == "small":
         data_folder = data_small
-        valid_size = 10
     elif dataset == "large":
         data_folder = data_large
-        valid_size = 1000
     elif dataset == "huge":
         data_folder = data_full
-        valid_size = 5000
     else:
         print("Invalid dataset")
         exit(1)
@@ -66,7 +63,9 @@ if __name__ == '__main__':
     clf = utils.pnp_train_function(X, y)
     features_encoded = utils.feature_importances(clf, features_encoded, n=20)
 
-    label_times_train, _ = train_test_split(label_times, test_size=0.2, random_state=42)
+    label_times_train, label_times_test = train_test_split(label_times, test_size=0.2, random_state=42)
+    valid_size = len(label_times_test)
+    del label_times_test
     label_times_train = label_times_train.sort_values(by=["user_id"])
     y_train = label_times_train.pop("label")
 
