@@ -45,7 +45,8 @@ if __name__ == '__main__':
     full_feature_matrix_test = ft.calculate_feature_matrix(more_important_features + less_important_features,
                                                            entityset=es,
                                                            cutoff_time=cutoff_valid)
-    full_feature_matrix_test = full_feature_matrix_test.fillna(0)
+    full_feature_matrix_test = full_feature_matrix_test.replace({np.inf: np.nan, -np.inf: np.nan}). \
+            fillna(full_feature_matrix_test.median())
     orig_preds = full_model.predict_proba(full_feature_matrix_test)[:, 1]
     no_cascades_time_elapsed = time.time() - full_t0
     if not args.cascades:
