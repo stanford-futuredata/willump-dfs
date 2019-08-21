@@ -55,23 +55,46 @@ def willump_dfs_find_efficient_features(partitioned_features: List[List[FeatureB
     """
     Implements Willump's algorithm for finding efficient features.
     """
-    total_cost = sum(partition_costs)
+
+    def knapsack_dp(values, weights, capacity):
+        # Credit: https://gist.github.com/KaiyangZhou/71a473b1561e0ea64f97d0132fe07736
+        n_items = len(values)
+        table = np.zeros((n_items + 1, capacity + 1), dtype=np.float32)
+        keep = np.zeros((n_items + 1, capacity + 1), dtype=np.float32)
+
+        for i in range(1, n_items + 1):
+            for w in range(0, capacity + 1):
+                wi = weights[i - 1]  # weight of current item
+                vi = values[i - 1]  # value of current item
+                if (wi <= w) and (vi + table[i - 1, w - wi] > table[i - 1, w]):
+                    table[i, w] = vi + table[i - 1, w - wi]
+                    keep[i, w] = 1
+                else:
+                    table[i, w] = table[i - 1, w]
+        picks = []
+        K = capacity
+        for i in range(n_items, 0, -1):
+            if keep[i, K] == 1:
+                picks.append(i)
+                K -= weights[i - 1]
+        picks.sort()
+        picks = [x - 1 for x in picks]  # change to 0-index
+        return picks
+
+    scaled_total_cost = 1000
+    orig_total_cost = sum(partition_costs)
+    scale_factor = scaled_total_cost / orig_total_cost
+    scaled_costs = [round(cost * scale_factor) for cost in partition_costs]
     partition_ids = range(len(partitioned_features))
-    partition_efficiencies = [importance / cost for importance, cost in zip(partition_importances, partition_costs)]
-    ranked_partitions = sorted(partition_ids, key=lambda x: partition_efficiencies[x], reverse=True)
-    current_cost = 0
-    more_important_partitions = []
-    for p_id in ranked_partitions:
-        if current_cost + partition_costs[p_id] <= cost_cutoff * total_cost:
-            more_important_partitions.append(p_id)
-            current_cost += partition_costs[p_id]
+    more_important_partitions = knapsack_dp(partition_importances, scaled_costs, int(scaled_total_cost * cost_cutoff))
+    mi_cost = sum([scaled_costs[i] for i in more_important_partitions])
     less_important_partitions = [p_id for p_id in partition_ids if p_id not in more_important_partitions]
     more_important_features, less_important_features = [], []
     for p_id in more_important_partitions:
         more_important_features += partitioned_features[p_id]
     for p_id in less_important_partitions:
         less_important_features += partitioned_features[p_id]
-    return more_important_features, less_important_features, current_cost, total_cost
+    return more_important_features, less_important_features, mi_cost, scaled_total_cost
 
 
 def calculate_feature_set_performance(x, y, mi_cost: float, total_cost: float, mi_features, all_features,
