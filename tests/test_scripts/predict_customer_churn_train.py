@@ -162,7 +162,7 @@ if __name__ == '__main__':
     split_date = pd.datetime(2016, 8, 1)
     cutoff_train = cutoff_times.loc[cutoff_times['cutoff_time'] < split_date].copy()
     cutoff_valid = cutoff_times.loc[cutoff_times['cutoff_time'] >= split_date].copy()
-    valid_size = len(cutoff_train) // 4
+    valid_size = len(cutoff_valid)
     print("%d train rows, %d test rows" % (len(cutoff_train), len(cutoff_valid)))
     del cutoff_valid
 
@@ -244,8 +244,8 @@ if __name__ == '__main__':
                                                                        all_features=feature_defs,
                                                                        train_function=pcc_train_function,
                                                                        predict_proba_function=pcc_predict_proba_function,
-                                                                       top_k=args.top_k,
-                                                                       valid_size=valid_size)
+                                                                       top_k_distribution=[args.top_k],
+                                                                       valid_size_distribution=[valid_size])
         else:
             t_candidate, cost = calculate_feature_set_performance(x=feature_matrix_train.values, y=train_y,
                                                                   mi_cost=mi_cost, total_cost=total_cost,

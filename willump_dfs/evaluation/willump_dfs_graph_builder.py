@@ -1,3 +1,4 @@
+import random
 import time
 from typing import List, Tuple
 
@@ -5,10 +6,10 @@ import featuretools as ft
 import numpy as np
 from featuretools.feature_base.feature_base import FeatureBase
 from sklearn.model_selection import ShuffleSplit
+from sklearn.model_selection import train_test_split
 
 from willump_dfs.evaluation.willump_dfs_utils import index_feature_in_list
 from willump_dfs.graph.willump_dfs_graph import WillumpDFSGraph
-from sklearn.model_selection import train_test_split, KFold
 
 
 def willump_dfs_partition_features(features: List[FeatureBase]) -> List[List[FeatureBase]]:
@@ -101,39 +102,43 @@ def calculate_feature_set_performance(x, y, mi_cost: float, total_cost: float, m
     return best_threshold, best_cost
 
 
-trained_models = {}
+orig_model = None
 
 
 def calculate_feature_set_performance_topk(x, y, mi_cost: float, total_cost: float, mi_features, all_features,
                                            train_function, predict_proba_function,
-                                           top_k, valid_size):
+                                           top_k_distribution: List[int], valid_size_distribution: List[int]):
+    global orig_model
     mi_feature_indices = list(map(lambda feature: index_feature_in_list(feature, all_features), mi_features))
-    kf = KFold(n_splits=4, random_state=42)
-    ratios_map = {i: True for i in range(1, valid_size // top_k)}
-    for train_index, valid_index in kf.split(x):
-        train_x, valid_x, train_y, valid_y = x[train_index], x[valid_index], y[train_index], y[valid_index]
-        train_x_efficient, valid_x_efficient = train_x[:, mi_feature_indices], valid_x[:, mi_feature_indices]
-        assert valid_size - 2 <= valid_x.shape[0] <= valid_size + 2
-        small_model = train_function(train_x_efficient, train_y)
-        if tuple(train_index) not in trained_models:
-            orig_model = train_function(train_x, train_y)
-            trained_models[tuple(train_index)] = orig_model
-        else:
-            orig_model = trained_models[tuple(train_index)]
-        small_probs = predict_proba_function(small_model, valid_x_efficient)
-        orig_probs = predict_proba_function(orig_model, valid_x)
-        assert (len(small_probs) == len(orig_probs) == valid_x.shape[0])
-        orig_model_top_k_idx = np.argsort(orig_probs)[-1 * top_k:]
-        for ratio in range(1, valid_size // top_k):
-            small_model_top_ratio_k_idx = np.argsort(small_probs)[-1 * top_k * ratio:]
+    train_x, valid_x, train_y, valid_y = train_test_split(x, y, test_size=0.5, random_state=42)
+    assert (valid_x.shape[0] > max(valid_size_distribution))
+    train_x_efficient, valid_x_efficient = train_x[:, mi_feature_indices], valid_x[:, mi_feature_indices]
+    if orig_model is None:
+        orig_model = train_function(train_x, train_y)
+    small_model = train_function(train_x_efficient, train_y)
+    small_probs = predict_proba_function(small_model, valid_x_efficient)
+    orig_probs = predict_proba_function(orig_model, valid_x)
+    num_samples = 100
+    candidate_ratios = sorted(list(set(range(1, 100)).union(set(range(1, min(valid_size_distribution) //
+                                                                      max(top_k_distribution), 10)))))
+    ratios_map = {i: 0 for i in candidate_ratios}
+    for i in range(num_samples):
+        valid_size = random.choice(valid_size_distribution)
+        top_k = random.choice(top_k_distribution)
+        sample_indices = np.random.choice(len(orig_probs), size=valid_size)
+        sample_small_probs = small_probs[sample_indices]
+        sample_orig_probs = orig_probs[sample_indices]
+        assert (len(sample_small_probs) == len(sample_orig_probs) == valid_size)
+        orig_model_top_k_idx = np.argsort(sample_orig_probs)[-1 * top_k:]
+        for ratio in candidate_ratios:
+            small_model_top_ratio_k_idx = np.argsort(sample_small_probs)[-1 * top_k * ratio:]
             small_model_precision = len(np.intersect1d(orig_model_top_k_idx, small_model_top_ratio_k_idx)) / top_k
-            if not small_model_precision >= 0.95:
-                ratios_map[ratio] = False
-    good_ratios = [ratio for ratio in ratios_map.keys() if ratios_map[ratio] is True]
-    if len(good_ratios) == 0:
-        return valid_size // top_k, total_cost * valid_size
+            if small_model_precision >= 0.95:
+                ratios_map[ratio] += 1
+    good_ratios = [ratio for ratio in candidate_ratios if ratios_map[ratio] >= 0.95 * num_samples]
     good_ratio = min(good_ratios)
-    cost = mi_cost * valid_size + (total_cost - mi_cost) * good_ratio * top_k
+    cost = mi_cost * np.mean(valid_size_distribution) + (total_cost - mi_cost) * good_ratio *\
+           np.mean(top_k_distribution)
     return good_ratio, cost
 
 

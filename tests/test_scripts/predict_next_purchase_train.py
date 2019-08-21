@@ -102,8 +102,8 @@ if __name__ == '__main__':
                                                                        all_features=features_encoded,
                                                                        train_function=utils.pnp_train_function,
                                                                        predict_proba_function=utils.pnp_predict_proba_function,
-                                                                       top_k=args.top_k,
-                                                                       valid_size=valid_size)
+                                                                       top_k_distribution=[args.top_k],
+                                                                       valid_size_distribution=[valid_size])
         else:
             t_candidate, cost = calculate_feature_set_performance(x=top_feature_matrix_train.values, y=y_train.values,
                                                                   mi_cost=mi_cost, total_cost=total_cost,
