@@ -5,7 +5,7 @@ import pickle
 import featuretools.variable_types as vtypes
 import pandas as pd
 from featuretools.primitives import make_agg_primitive
-from sklearn.ensemble import RandomForestClassifier
+from sklearn.ensemble import ExtraTreesClassifier
 from sklearn.metrics import roc_auc_score
 
 from willump_dfs.evaluation.willump_dfs_graph_builder import *
@@ -16,10 +16,14 @@ partitions_dir = resources_folder + 'partitions/'
 
 
 def pcc_train_function(X, y):
-    model = RandomForestClassifier(n_estimators=100, max_depth=40,
-                                   min_samples_leaf=50,
-                                   n_jobs=1, class_weight='balanced',
-                                   random_state=42)
+    model = ExtraTreesClassifier(bootstrap=False,
+                                 criterion="entropy",
+                                 max_features=0.1,
+                                 min_samples_leaf=5,
+                                 min_samples_split=8,
+                                 n_estimators=100,
+                                 random_state=50,
+                                 n_jobs=1)
     model.fit(X, y)
     return model
 
