@@ -1,12 +1,14 @@
 import argparse
-import os
 import pickle
 
 import featuretools.variable_types as vtypes
+import numpy as np
 import pandas as pd
 from featuretools.primitives import make_agg_primitive
-from sklearn.ensemble import ExtraTreesClassifier
+from sklearn.ensemble import GradientBoostingClassifier
+from sklearn.feature_selection import SelectFwe, f_classif
 from sklearn.metrics import roc_auc_score
+from sklearn.pipeline import make_pipeline
 
 from willump_dfs.evaluation.willump_dfs_graph_builder import *
 from willump_dfs.evaluation.willump_dfs_utils import feature_in_list
@@ -16,16 +18,13 @@ partitions_dir = resources_folder + 'partitions/'
 
 
 def pcc_train_function(X, y):
-    model = ExtraTreesClassifier(bootstrap=False,
-                                 criterion="entropy",
-                                 max_features=0.1,
-                                 min_samples_leaf=5,
-                                 min_samples_split=8,
-                                 n_estimators=100,
-                                 random_state=50,
-                                 n_jobs=1)
-    model.fit(X, y)
-    return model
+    exported_pipeline = make_pipeline(
+        SelectFwe(score_func=f_classif, alpha=0.024),
+        GradientBoostingClassifier(learning_rate=0.1, max_depth=5, max_features=0.35000000000000003, min_samples_leaf=5,
+                                   min_samples_split=17, n_estimators=100, subsample=0.15000000000000002)
+    )
+    exported_pipeline.fit(X, y)
+    return exported_pipeline
 
 
 def pcc_predict_function(model, X_valid):
