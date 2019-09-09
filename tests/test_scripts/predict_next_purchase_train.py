@@ -8,6 +8,7 @@ from sklearn.model_selection import train_test_split
 import predict_next_purchase_utils as utils
 from willump_dfs.evaluation.willump_dfs_graph_builder import *
 from willump_dfs.evaluation.willump_dfs_utils import feature_in_list
+import time
 
 resources_folder = "tests/test_resources/predict_next_purchase_resources/"
 
@@ -19,6 +20,7 @@ data_folder = None
 
 if __name__ == '__main__':
 
+    start_time  = time.time()
     parser = argparse.ArgumentParser()
     parser.add_argument("-d", "--dataset", type=str, help="Cascade threshold")
     parser.add_argument("-k", "--top_k", type=int, help="Top-K to return")
@@ -70,13 +72,13 @@ if __name__ == '__main__':
     y_train = label_times_train.pop("label")
 
     print("Train Set Size: %d" % len(y_train))
-
     # Train model with top features.
     top_feature_matrix_train = ft.calculate_feature_matrix(features_encoded,
                                                            entityset=es,
                                                            cutoff_time=label_times_train)
     top_feature_matrix_train = top_feature_matrix_train.fillna(0)
 
+    t0 = time.time()
     partitioned_features = willump_dfs_partition_features(features_encoded)
 
     partition_times = willump_dfs_time_partitioned_features(partitioned_features, es, label_times)
@@ -120,18 +122,22 @@ if __name__ == '__main__':
             cost_cutoff = cc_candidate
             min_cost = cost
 
+    print("Setup time: %f" % (time.time() - t0))
     print("Cost Cutoff: %f Cascade Threshold: %f" % (cost_cutoff, cascade_threshold))
 
     for i, (features, cost, importance) in enumerate(zip(partitioned_features, partition_times, partition_importances)):
         print("%d Features: %s\nCost: %f  Importance: %f  Efficient: %r" % (i, features, cost, importance, all(
             feature_in_list(feature, more_important_features) for feature in features)))
 
+    t0 = time.time()
     small_model, full_model = willump_dfs_train_models(more_important_features=more_important_features,
                                                        less_important_features=less_important_features,
                                                        entity_set=es,
                                                        training_times=label_times_train,
                                                        y_train=y_train,
                                                        train_function=utils.pnp_train_function)
+    print("Train time: %f" % (time.time() - t0))
+    print("Total time: %f" % (time.time() - start_time))
 
     # Save top features.
     ft.save_features(less_important_features, resources_folder + "li_features.dfs")
