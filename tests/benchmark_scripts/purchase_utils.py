@@ -1,3 +1,4 @@
+# Original source: https://github.com/Featuretools/predict-next-purchase
 import os
 
 import featuretools as ft

@@ -1,3 +1,4 @@
+# Original source: https://github.com/Featuretools/predict-next-purchase
 import argparse
 import pickle
 
@@ -5,7 +6,7 @@ import pandas as pd
 from sklearn.metrics import roc_auc_score
 from sklearn.model_selection import train_test_split
 
-import predict_next_purchase_utils as utils
+import purchase_utils as utils
 from willump_dfs.evaluation.willump_dfs_graph_builder import *
 from willump_dfs.evaluation.willump_dfs_utils import feature_in_list
 import time

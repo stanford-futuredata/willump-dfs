@@ -1,9 +1,10 @@
+# Original source: https://github.com/Featuretools/predict-next-purchase
 import pickle
 
 from sklearn.metrics import roc_auc_score
 from sklearn.model_selection import train_test_split
 
-import predict_next_purchase_utils as utils
+import purchase_utils as utils
 from willump_dfs.evaluation.willump_dfs_graph_builder import *
 import pandas as pd
 import argparse
@@ -20,6 +21,7 @@ if __name__ == '__main__':
 
     parser = argparse.ArgumentParser()
     parser.add_argument("-c", "--cascades", action="store_true", help="Cascade threshold")
+    parser.add_argument("-k", "--top_k", type=int, help="Top-K to return", required=True)
     parser.add_argument("-d", "--dataset", type=str, help="Cascade threshold")
     args = parser.parse_args()
     dataset = args.dataset
@@ -32,7 +34,8 @@ if __name__ == '__main__':
     else:
         print("Invalid dataset")
         exit(1)
-    cascade_threshold = pickle.load(open(resources_folder + "cascades_parameters.pk", "rb"))
+    ratio = pickle.load(open(resources_folder + "cascades_parameters.pk", "rb"))
+    top_K = args.top_k
 
     try:
         es = ft.read_entityset(resources_folder + data_folder + "_entity_set")
@@ -53,29 +56,35 @@ if __name__ == '__main__':
 
     _, label_times_test = train_test_split(label_times, test_size=0.2, random_state=42)
     label_times_test = label_times_test.sort_values(by=["user_id"])
-    y_test = label_times_test.pop("label")
+    _ = label_times_test.pop("label")
     print("Test dataset length: %d" % len(label_times_test))
 
+    full_t0 = time.time()
+    full_feature_matrix_test = ft.calculate_feature_matrix(more_important_features + less_important_features,
+                                                           entityset=es,
+                                                           cutoff_time=label_times_test)
+    full_feature_matrix_test = full_feature_matrix_test.fillna(0)
+    orig_preds = full_model.predict_proba(full_feature_matrix_test)[:, 1]
+    no_cascades_time_elapsed = time.time() - full_t0
     if not args.cascades:
-        print("Without Cascades")
-        full_t0 = time.time()
-        full_feature_matrix_test = ft.calculate_feature_matrix(more_important_features + less_important_features,
-                                                               entityset=es,
-                                                               cutoff_time=label_times_test)
-        full_feature_matrix_test = full_feature_matrix_test.fillna(0)
-        full_preds = full_model.predict(full_feature_matrix_test)
-        time_elapsed = time.time() - full_t0
-        score = roc_auc_score(y_test, full_preds)
+        time_elapsed = no_cascades_time_elapsed
+        preds = orig_preds
     else:
-        assert(0.5 <= cascade_threshold <= 1.0)
-        print("Cascade Threshold %f" % cascade_threshold)
+        print("Ratio: %f" % ratio)
         cascade_t0 = time.time()
-        cascade_preds = willump_dfs_cascade(more_important_features=more_important_features,
-                                            less_important_features=less_important_features,
-                                            entity_set=es, cutoff_times=label_times_test, small_model=small_model,
-                                            full_model=full_model, confidence_threshold=cascade_threshold)
+        preds = willump_dfs_topk_cascade(more_important_features=more_important_features,
+                                         less_important_features=less_important_features,
+                                         entity_set=es, cutoff_times=label_times_test, small_model=small_model,
+                                         full_model=full_model, ratio=ratio, top_k=top_K)
         time_elapsed = time.time() - cascade_t0
-        score = roc_auc_score(y_test, cascade_preds)
 
-    print("Time: %f sec  AUC: %f  Throughput: %f rows/sec" % (
-        time_elapsed, score, len(label_times_test) / time_elapsed))
+    orig_model_top_k_idx = np.argsort(orig_preds)[-1 * top_K:]
+    actual_model_top_k_idx = np.argsort(preds)[-1 * top_K:]
+    precision = len(np.intersect1d(orig_model_top_k_idx, actual_model_top_k_idx)) / top_K
+
+    orig_model_sum = sum(orig_preds[orig_model_top_k_idx])
+    actual_model_sum = sum(preds[actual_model_top_k_idx])
+
+    print("Time: %f sec  Length: %d  Throughput: %f rows/sec" % (
+        time_elapsed, len(label_times_test), len(label_times_test) / time_elapsed))
+    print("Precision: %f Orig Model Sum: %f Actual Model Sum: %f" % (precision, orig_model_sum, actual_model_sum))
