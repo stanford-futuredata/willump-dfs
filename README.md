@@ -22,7 +22,7 @@ The first command trains a model (note that this takes around three hours), the 
 optimization.  The throughput reported by the third command should be significantly higher
 than that reported by the second.
 
-To replica results in Figure 8, run:
+To replicate results in Figure 8, run:
 
     python3 tests/benchmark_scripts/purchase_train.py -d huge -k 100
     python3 tests/benchmark_scripts/purchase_batch.py -d huge -k 100
